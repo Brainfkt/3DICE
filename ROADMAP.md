@@ -81,7 +81,7 @@ Budget rendu retenu 2026-06-27 :
 But : ameliorer l'impression photorealiste sans degrader la performance.
 
 - [x] Ameliorer les points du de : effet creuse visuel, normal map ou geometrie fine si le cout reste bas.
-- [ ] Ajuster la matiere ivoire : roughness, clearcoat, tonemapping, intensite de l'environnement.
+- [x] Ajuster la matiere ivoire : roughness, clearcoat, tonemapping, intensite de l'environnement.
 - [ ] Ameliorer le contact avec le sol : ombre plus lisible, pas de halo ou flottement.
 - [ ] Rendre le plateau plus mat et textural sans bruit visuel excessif.
 - [x] Ajouter un feedback d'impact localise quand le de touche une limite invisible.
@@ -94,6 +94,13 @@ Points du de retenus 2026-06-28 :
 - Valeurs : disque noir rayon `0.066`, anneau sombre `0.071 -> 0.098`, offset surface `0.0065`, `44` segments. Materiaux `MeshStandardMaterial` rugueux pour rester coherents avec le rendu PBR natif.
 - Cout mesure : `4` draw calls apres changement, `40864` triangles, desktop 1280x900 DPR 2 `60.0fps` / `16.67ms`, mobile 390x844 DPR 2 `60.0fps` / `16.67ms`.
 - Decision : accepter la hausse de triangles par rapport aux anciens disques, car les instances reduisent fortement les draw calls et les budgets frame restent respectes.
+
+Matiere ivoire retenue 2026-06-28 :
+
+- De : couleur `#efe7d3`, roughness `0.62`, clearcoat `0.28`, clearcoat roughness `0.72`, sheen `0.08`, metalness `0`.
+- Texture de rugosite : `DataTexture` deterministe `64x64`, seed `0x1c0ffee`, base `218`, variation `24`, repetition `2x2`. Decision : micro-variation de rugosite seulement, sans normal map ni post-processing, pour eviter un effet plastique tout en gardant un cout faible.
+- Scene : tone mapping exposure `1.03`, ambient `0.48`, point light secondaire `0.36`, environment intensity `0.48`.
+- Mesures : desktop 1280x720 DPR 2 stable `60.0fps` / `16.67ms`, lancer en mouvement `44.1fps` / `22.69ms` sous budget DPR 2 `24ms`, mobile 390x844 DPR 2 `60.0fps` / `16.67ms`, `4` draw calls, `40864` triangles, JS gzip `1069.72 kB`.
 
 ## Priorite 4 - Robustesse et maintenance
 
@@ -155,3 +162,4 @@ Ajouter les notes courtes ici, dans l'ordre chronologique.
 - 2026-06-27 : preparation publication GitHub : ajout `.gitignore`, README public complet, `CONTRIBUTING.md`, notes d'architecture, et maintien de `AGENTS.md` en fichier local ignore. Validation : scan des mentions internes hors fichiers ignores, `npm run build`, `npm run test`.
 - 2026-06-27 : miniature navigateur ajustee sur la face `3` du de via favicon SVG inline. Validation : `npm run build`, `npm run test`.
 - 2026-06-28 : points du de rendus en effet creuse sobre via disque noir + anneau sombre instancies, sans changer la physique ni la detection de face. Validation : `npm run build`, `npm run test`, `npm run dev` + Playwright desktop/mobile, lancer stabilise `Face: 4`, Reset OK, console sans erreur/warning, captures visuelles OK. Decision : Browser integre indisponible (`agent.browsers.list()` vide), validation faite avec Playwright CLI.
+- 2026-06-28 : matiere ivoire ajustee avec roughness map deterministe, clearcoat reduit, tonemapping et environnement recalibres pour un de moins plastique et plus mat. Validation : `npm run build`, `npm run test`, `npm run dev` + Playwright desktop/mobile, lancer stabilise `Face: 1`, Reset OK, console sans erreur/warning, captures visuelles OK. Decision : pas de normal map pour l'instant, la rugosite suffit et garde le rendu sobre.
