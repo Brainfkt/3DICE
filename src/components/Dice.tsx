@@ -11,6 +11,8 @@ import {
   RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -41,17 +43,36 @@ type DiceProps = {
 
 const DICE_SIZE = 1.12;
 const HALF = DICE_SIZE / 2;
-const PIP_RADIUS = 0.075;
+const PIP_FILL_RADIUS = 0.066;
+const PIP_RECESS_INNER_RADIUS = 0.071;
+const PIP_RECESS_OUTER_RADIUS = 0.098;
 const PIP_OFFSET = 0.235;
+const PIP_SURFACE_OFFSET = 0.0065;
 const INITIAL_POSITION = new THREE.Vector3(0, HALF + 0.02, 0);
 const INITIAL_ROTATION = new THREE.Quaternion().setFromEuler(
   new THREE.Euler(0.1, -0.28, 0.18),
 );
 
-const pipMaterial = new THREE.MeshBasicMaterial({
-  color: "#050505",
+const pipFillMaterial = new THREE.MeshStandardMaterial({
+  color: "#030303",
+  roughness: 0.82,
+  metalness: 0,
   side: THREE.DoubleSide,
 });
+
+const pipRecessMaterial = new THREE.MeshStandardMaterial({
+  color: "#2a261e",
+  roughness: 0.95,
+  metalness: 0,
+  side: THREE.DoubleSide,
+});
+
+const pipFillGeometry = new THREE.CircleGeometry(PIP_FILL_RADIUS, 44);
+const pipRecessGeometry = new THREE.RingGeometry(
+  PIP_RECESS_INNER_RADIUS,
+  PIP_RECESS_OUTER_RADIUS,
+  44,
+);
 
 const diceMaterial = new THREE.MeshPhysicalMaterial({
   color: "#f0ead9",
@@ -63,23 +84,48 @@ const diceMaterial = new THREE.MeshPhysicalMaterial({
 });
 
 function DicePips() {
+  const fillRef = useRef<THREE.InstancedMesh>(null);
+  const recessRef = useRef<THREE.InstancedMesh>(null);
+  const transformHelper = useMemo(() => new THREE.Object3D(), []);
+  const pipTransforms = useMemo(
+    () =>
+      diceFaceDefinitions.flatMap(({ value, localNormal }) =>
+        createFacePipLayout(value, localNormal, HALF, PIP_OFFSET, PIP_SURFACE_OFFSET),
+      ),
+    [],
+  );
+
+  useLayoutEffect(() => {
+    const fill = fillRef.current;
+    const recess = recessRef.current;
+    if (!fill || !recess) return;
+
+    pipTransforms.forEach(({ position, quaternion }, index) => {
+      transformHelper.position.copy(position);
+      transformHelper.quaternion.copy(quaternion);
+      transformHelper.scale.setScalar(1);
+      transformHelper.updateMatrix();
+
+      fill.setMatrixAt(index, transformHelper.matrix);
+      recess.setMatrixAt(index, transformHelper.matrix);
+    });
+
+    fill.instanceMatrix.needsUpdate = true;
+    recess.instanceMatrix.needsUpdate = true;
+  }, [pipTransforms, transformHelper]);
+
   return (
     <>
-      {diceFaceDefinitions.flatMap(({ value, localNormal }) => {
-        return createFacePipLayout(value, localNormal, HALF, PIP_OFFSET, 0.004).map(
-          ({ position, quaternion }, index) => (
-            <mesh
-              key={`${value}-${index}`}
-              receiveShadow
-              material={pipMaterial}
-              position={position}
-              quaternion={quaternion}
-            >
-              <circleGeometry args={[PIP_RADIUS, 40]} />
-            </mesh>
-          ),
-        );
-      })}
+      <instancedMesh
+        ref={recessRef}
+        args={[pipRecessGeometry, pipRecessMaterial, pipTransforms.length]}
+        receiveShadow
+      />
+      <instancedMesh
+        ref={fillRef}
+        args={[pipFillGeometry, pipFillMaterial, pipTransforms.length]}
+        receiveShadow
+      />
     </>
   );
 }

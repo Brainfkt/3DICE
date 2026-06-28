@@ -80,13 +80,20 @@ Budget rendu retenu 2026-06-27 :
 
 But : ameliorer l'impression photorealiste sans degrader la performance.
 
-- [ ] Ameliorer les points du de : effet creuse visuel, normal map ou geometrie fine si le cout reste bas.
+- [x] Ameliorer les points du de : effet creuse visuel, normal map ou geometrie fine si le cout reste bas.
 - [ ] Ajuster la matiere ivoire : roughness, clearcoat, tonemapping, intensite de l'environnement.
 - [ ] Ameliorer le contact avec le sol : ombre plus lisible, pas de halo ou flottement.
 - [ ] Rendre le plateau plus mat et textural sans bruit visuel excessif.
 - [x] Ajouter un feedback d'impact localise quand le de touche une limite invisible.
 - [ ] Verifier que le de reste lisible sur fond sombre en desktop et mobile.
 - [ ] Garder la palette sobre : graphite, ivoire, noir, pas d'accent flashy.
+
+Points du de retenus 2026-06-28 :
+
+- Decision : remplacer les 21 disques plats par deux `InstancedMesh` partages, un disque noir et un anneau sombre de recess, pour donner un effet creuse sans CSG ni texture supplementaire.
+- Valeurs : disque noir rayon `0.066`, anneau sombre `0.071 -> 0.098`, offset surface `0.0065`, `44` segments. Materiaux `MeshStandardMaterial` rugueux pour rester coherents avec le rendu PBR natif.
+- Cout mesure : `4` draw calls apres changement, `40864` triangles, desktop 1280x900 DPR 2 `60.0fps` / `16.67ms`, mobile 390x844 DPR 2 `60.0fps` / `16.67ms`.
+- Decision : accepter la hausse de triangles par rapport aux anciens disques, car les instances reduisent fortement les draw calls et les budgets frame restent respectes.
 
 ## Priorite 4 - Robustesse et maintenance
 
@@ -147,3 +154,4 @@ Ajouter les notes courtes ici, dans l'ordre chronologique.
 - 2026-06-27 : audit camera monde ouvert : clamp de drag corrige pour rester relatif au point de prise loin de l'origine, suivi camera rendu plus reactif apres relachement, et Reset camera rendu immediat avec retour position/cible/zoom sans amortissement. Validation : `npm run build`, `npm run test`, serveur Vite local + Playwright desktop/mobile, lancer loin suivi a `250/750/1500ms`, drag maintenu sans snap, Reset apres lancer loin + zoom a `70ms`, console sans erreur/warning.
 - 2026-06-27 : preparation publication GitHub : ajout `.gitignore`, README public complet, `CONTRIBUTING.md`, notes d'architecture, et maintien de `AGENTS.md` en fichier local ignore. Validation : scan des mentions internes hors fichiers ignores, `npm run build`, `npm run test`.
 - 2026-06-27 : miniature navigateur ajustee sur la face `3` du de via favicon SVG inline. Validation : `npm run build`, `npm run test`.
+- 2026-06-28 : points du de rendus en effet creuse sobre via disque noir + anneau sombre instancies, sans changer la physique ni la detection de face. Validation : `npm run build`, `npm run test`, `npm run dev` + Playwright desktop/mobile, lancer stabilise `Face: 4`, Reset OK, console sans erreur/warning, captures visuelles OK. Decision : Browser integre indisponible (`agent.browsers.list()` vide), validation faite avec Playwright CLI.
