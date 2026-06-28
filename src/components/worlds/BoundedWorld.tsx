@@ -279,12 +279,11 @@ export function BoundedWorld({ physicsProfile }: BoundedWorldProps) {
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[size, size, 96, 96]} />
         <meshStandardMaterial
-          color={renderConfig.palette.floor}
+          color="#ffffff"
           map={floorTexture}
           bumpMap={floorTexture}
-          roughnessMap={floorTexture}
-          bumpScale={0.011}
-          roughness={0.94}
+          bumpScale={0.007}
+          roughness={0.96}
           metalness={0}
         />
       </mesh>
