@@ -31,6 +31,8 @@ import {
   PointerSample,
 } from "../physics/dicePhysics";
 import { PhysicsProfile, physicsConfig } from "../physics/config";
+import { renderConfig } from "../render/config";
+import { createIvoryRoughnessTexture } from "../render/ivoryTexture";
 
 type DiceProps = {
   physicsProfile: PhysicsProfile;
@@ -73,14 +75,16 @@ const pipRecessGeometry = new THREE.RingGeometry(
   PIP_RECESS_OUTER_RADIUS,
   44,
 );
+const ivoryRoughnessTexture = createIvoryRoughnessTexture(renderConfig.ivoryTexture);
 
 const diceMaterial = new THREE.MeshPhysicalMaterial({
-  color: "#f0ead9",
-  roughness: 0.42,
-  metalness: 0.01,
-  clearcoat: 0.5,
-  clearcoatRoughness: 0.42,
-  sheen: 0.18,
+  color: "#efe7d3",
+  roughness: 0.62,
+  roughnessMap: ivoryRoughnessTexture,
+  metalness: 0,
+  clearcoat: 0.28,
+  clearcoatRoughness: 0.72,
+  sheen: 0.08,
 });
 
 function DicePips() {

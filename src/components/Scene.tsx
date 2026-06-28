@@ -344,7 +344,7 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
       }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.06;
+        gl.toneMappingExposure = renderConfig.lighting.toneMappingExposure;
         gl.outputColorSpace = THREE.SRGBColorSpace;
       }}
     >
@@ -363,9 +363,13 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         focus={renderConfig.shadows.softFocus}
       />
 
-      <ambientLight intensity={0.52} />
+      <ambientLight intensity={renderConfig.lighting.ambientIntensity} />
       <FollowDirectionalLight dicePositionRef={dicePositionRef} />
-      <pointLight position={[-3, 3.4, -2.5]} intensity={0.45} color="#ded3bf" />
+      <pointLight
+        position={[-3, 3.4, -2.5]}
+        intensity={renderConfig.lighting.rimPointIntensity}
+        color="#ded3bf"
+      />
 
       <Physics
         key={physicsProfile.id}
@@ -383,7 +387,11 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         <Floor physicsProfile={physicsProfile} />
       </Physics>
 
-      <Environment preset="studio" background={false} environmentIntensity={0.42} />
+      <Environment
+        preset="studio"
+        background={false}
+        environmentIntensity={renderConfig.lighting.environmentIntensity}
+      />
     </Canvas>
   );
 }

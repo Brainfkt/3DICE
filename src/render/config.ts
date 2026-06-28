@@ -15,6 +15,18 @@ export const renderConfig = {
     noiseDots: 900,
     repeat: 16,
   },
+  ivoryTexture: {
+    size: 64,
+    seed: 0x1c0ffee,
+    baseValue: 218,
+    variation: 24,
+  },
+  lighting: {
+    toneMappingExposure: 1.03,
+    ambientIntensity: 0.48,
+    rimPointIntensity: 0.36,
+    environmentIntensity: 0.48,
+  },
   performance: {
     sampleDurationMs: 5000,
     maxStoredSamples: 20,
