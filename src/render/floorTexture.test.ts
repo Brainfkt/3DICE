@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFloorNoiseDots } from "./floorTexture";
+import { createFloorNoiseDots, createFloorTextureData } from "./floorTexture";
 
 describe("createFloorNoiseDots", () => {
   it("creates deterministic noise from the same seed", () => {
@@ -33,6 +33,61 @@ describe("createFloorNoiseDots", () => {
       expect(dot.x).toBeLessThan(64);
       expect(dot.y).toBeGreaterThanOrEqual(0);
       expect(dot.y).toBeLessThan(32);
+    }
+  });
+});
+
+describe("createFloorTextureData", () => {
+  it("creates deterministic texture data from the same seed", () => {
+    const input = {
+      seed: 0x3d1ce,
+      width: 8,
+      height: 8,
+      baseValue: 38,
+      variation: 9,
+      fiberStrength: 7,
+      speckleStrength: 18,
+    };
+
+    expect(createFloorTextureData(input)).toEqual(createFloorTextureData(input));
+  });
+
+  it("changes the texture pattern when the seed changes", () => {
+    const input = {
+      width: 8,
+      height: 8,
+      baseValue: 38,
+      variation: 9,
+      fiberStrength: 7,
+      speckleStrength: 18,
+    };
+
+    expect(createFloorTextureData({ ...input, seed: 1 })).not.toEqual(
+      createFloorTextureData({ ...input, seed: 2 }),
+    );
+  });
+
+  it("keeps pixels within byte bounds and opaque", () => {
+    const data = createFloorTextureData({
+      seed: 0x3d1ce,
+      width: 16,
+      height: 12,
+      baseValue: 38,
+      variation: 9,
+      fiberStrength: 7,
+      speckleStrength: 18,
+    });
+
+    expect(data).toHaveLength(16 * 12 * 4);
+
+    for (let i = 0; i < data.length; i += 4) {
+      expect(data[i]).toBeGreaterThanOrEqual(0);
+      expect(data[i]).toBeLessThanOrEqual(255);
+      expect(data[i + 1]).toBeGreaterThanOrEqual(0);
+      expect(data[i + 1]).toBeLessThanOrEqual(255);
+      expect(data[i + 2]).toBeGreaterThanOrEqual(0);
+      expect(data[i + 2]).toBeLessThanOrEqual(255);
+      expect(data[i + 3]).toBe(255);
     }
   });
 });
