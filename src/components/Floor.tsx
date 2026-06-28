@@ -10,7 +10,7 @@ type FloorProps = {
 };
 
 const OPEN_WORLD_HALF_EXTENT = 1024;
-const OPEN_WORLD_SEGMENTS = 128;
+const OPEN_WORLD_SEGMENTS = 64;
 
 export function Floor({ physicsProfile }: FloorProps) {
   const floor = physicsProfile.floor;
