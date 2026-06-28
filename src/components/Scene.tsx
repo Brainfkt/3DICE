@@ -35,6 +35,7 @@ const CAMERA_MAX_LOOK_SPEED = 34;
 const CAMERA_POSITION_SPEED = 8.4;
 const CAMERA_POSITION_CATCHUP_PER_UNIT = 0.85;
 const CAMERA_MAX_POSITION_SPEED = 26;
+const CONTACT_SHADOW_SIZE = 1.85;
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -209,6 +210,71 @@ type FollowDirectionalLightProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
 };
 
+function createContactShadowTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+
+  if (context) {
+    const gradient = context.createRadialGradient(64, 64, 6, 64, 64, 62);
+    gradient.addColorStop(0, "rgba(0, 0, 0, 0.68)");
+    gradient.addColorStop(0.38, "rgba(0, 0, 0, 0.32)");
+    gradient.addColorStop(0.72, "rgba(0, 0, 0, 0.08)");
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function GroundContactShadow({
+  dicePositionRef,
+}: {
+  dicePositionRef: MutableRefObject<THREE.Vector3>;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const texture = useMemo(() => createContactShadowTexture(), []);
+
+  useFrame(() => {
+    const mesh = meshRef.current;
+    const material = materialRef.current;
+    if (!mesh || !material) return;
+
+    const dicePosition = dicePositionRef.current;
+    const heightAboveRest = Math.max(dicePosition.y - 0.58, 0);
+    const heightFactor = clampNumber(heightAboveRest / 2.4, 0, 1);
+    const scale = 0.72 + heightFactor * 0.86;
+
+    mesh.position.set(dicePosition.x, 0.012, dicePosition.z);
+    mesh.scale.set(scale, scale, scale);
+    material.opacity = clampNumber(0.34 - heightFactor * 0.27, 0.06, 0.34);
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={[0, 0.012, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      renderOrder={1}
+    >
+      <planeGeometry args={[CONTACT_SHADOW_SIZE, CONTACT_SHADOW_SIZE]} />
+      <meshBasicMaterial
+        ref={materialRef}
+        map={texture}
+        color={renderConfig.palette.contactShadow}
+        transparent
+        depthWrite={false}
+        opacity={0.3}
+      />
+    </mesh>
+  );
+}
+
 function FollowDirectionalLight({ dicePositionRef }: FollowDirectionalLightProps) {
   const lightRef = useRef<THREE.DirectionalLight>(null);
   const target = useMemo(() => new THREE.Object3D(), []);
@@ -246,6 +312,7 @@ function FollowDirectionalLight({ dicePositionRef }: FollowDirectionalLightProps
         intensity={2.25}
         shadow-mapSize={[renderConfig.shadows.mapSize, renderConfig.shadows.mapSize]}
         shadow-bias={renderConfig.shadows.bias}
+        shadow-normalBias={renderConfig.shadows.normalBias}
         shadow-camera-left={-9}
         shadow-camera-right={9}
         shadow-camera-top={9}
@@ -348,8 +415,8 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         gl.outputColorSpace = THREE.SRGBColorSpace;
       }}
     >
-      <color attach="background" args={["#171716"]} />
-      <fog attach="fog" args={["#171716", 26, 150]} />
+      <color attach="background" args={[renderConfig.palette.background]} />
+      <fog attach="fog" args={[renderConfig.palette.fog, 24, 145]} />
       <PerspectiveCamera makeDefault position={[8.2, 5.6, 9.4]} fov={46} near={0.1} far={1200} />
       <CameraRig
         dicePositionRef={dicePositionRef}
@@ -386,6 +453,7 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         />
         <Floor physicsProfile={physicsProfile} />
       </Physics>
+      <GroundContactShadow dicePositionRef={dicePositionRef} />
 
       <Environment
         preset="studio"

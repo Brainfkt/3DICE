@@ -3,14 +3,13 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { PhysicsProfile } from "../physics/config";
 import { renderConfig } from "../render/config";
-import { createFloorNoiseDots } from "../render/floorTexture";
+import { createFloorTextureData } from "../render/floorTexture";
 
 type FloorProps = {
   physicsProfile: PhysicsProfile;
 };
 
 const OPEN_WORLD_HALF_EXTENT = 1024;
-const OPEN_WORLD_TEXTURE_REPEAT = 720;
 const OPEN_WORLD_SEGMENTS = 128;
 
 export function Floor({ physicsProfile }: FloorProps) {
@@ -23,26 +22,25 @@ export function Floor({ physicsProfile }: FloorProps) {
     const context = canvas.getContext("2d");
 
     if (context) {
-      context.fillStyle = "#2a2926";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-
-      for (const dot of createFloorNoiseDots({
+      const imageData = context.createImageData(canvas.width, canvas.height);
+      imageData.data.set(createFloorTextureData({
         seed: renderConfig.floorTexture.seed,
-        count: renderConfig.floorTexture.noiseDots,
         width: canvas.width,
         height: canvas.height,
-      })) {
-        const value = dot.value;
-        context.fillStyle = `rgba(${value}, ${value}, ${value - 3}, 0.22)`;
-        context.fillRect(dot.x, dot.y, 1, 1);
-      }
+        baseValue: renderConfig.floorTexture.baseValue,
+        variation: renderConfig.floorTexture.variation,
+        fiberStrength: renderConfig.floorTexture.fiberStrength,
+        speckleStrength: renderConfig.floorTexture.speckleStrength,
+      }));
+      context.putImageData(imageData, 0, 0);
     }
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(OPEN_WORLD_TEXTURE_REPEAT, OPEN_WORLD_TEXTURE_REPEAT);
+    texture.repeat.set(renderConfig.floorTexture.repeat, renderConfig.floorTexture.repeat);
     texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
     texture.needsUpdate = true;
     return texture;
   }, []);
@@ -63,12 +61,13 @@ export function Floor({ physicsProfile }: FloorProps) {
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[size, size, OPEN_WORLD_SEGMENTS, OPEN_WORLD_SEGMENTS]} />
         <meshStandardMaterial
-          color="#272623"
+          color={renderConfig.palette.floor}
           map={floorTexture}
           bumpMap={floorTexture}
-          bumpScale={0.018}
-          roughness={0.86}
-          metalness={0.02}
+          roughnessMap={floorTexture}
+          bumpScale={0.011}
+          roughness={0.94}
+          metalness={0}
         />
       </mesh>
     </RigidBody>
