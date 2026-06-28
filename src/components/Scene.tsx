@@ -35,7 +35,7 @@ const CAMERA_MAX_LOOK_SPEED = 34;
 const CAMERA_POSITION_SPEED = 8.4;
 const CAMERA_POSITION_CATCHUP_PER_UNIT = 0.85;
 const CAMERA_MAX_POSITION_SPEED = 26;
-const CONTACT_SHADOW_SIZE = 1.85;
+const CONTACT_SHADOW_SIZE = 1.28;
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -218,9 +218,9 @@ function createContactShadowTexture() {
 
   if (context) {
     const gradient = context.createRadialGradient(64, 64, 6, 64, 64, 62);
-    gradient.addColorStop(0, "rgba(0, 0, 0, 0.68)");
-    gradient.addColorStop(0.38, "rgba(0, 0, 0, 0.32)");
-    gradient.addColorStop(0.72, "rgba(0, 0, 0, 0.08)");
+    gradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+    gradient.addColorStop(0.32, "rgba(150, 150, 150, 0.76)");
+    gradient.addColorStop(0.66, "rgba(28, 28, 28, 0.18)");
     gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
     context.fillStyle = gradient;
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -248,11 +248,11 @@ function GroundContactShadow({
     const dicePosition = dicePositionRef.current;
     const heightAboveRest = Math.max(dicePosition.y - 0.58, 0);
     const heightFactor = clampNumber(heightAboveRest / 2.4, 0, 1);
-    const scale = 0.72 + heightFactor * 0.86;
+    const scale = 0.62 + heightFactor * 0.72;
 
     mesh.position.set(dicePosition.x, 0.012, dicePosition.z);
     mesh.scale.set(scale, scale, scale);
-    material.opacity = clampNumber(0.34 - heightFactor * 0.27, 0.06, 0.34);
+    material.opacity = clampNumber(0.56 - heightFactor * 0.42, 0.06, 0.56);
   });
 
   return (
@@ -265,11 +265,12 @@ function GroundContactShadow({
       <planeGeometry args={[CONTACT_SHADOW_SIZE, CONTACT_SHADOW_SIZE]} />
       <meshBasicMaterial
         ref={materialRef}
-        map={texture}
+        alphaMap={texture}
         color={renderConfig.palette.contactShadow}
         transparent
         depthWrite={false}
-        opacity={0.3}
+        opacity={0.5}
+        toneMapped={false}
       />
     </mesh>
   );

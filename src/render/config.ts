@@ -8,7 +8,7 @@ export const renderConfig = {
     softFocus: 0.36,
     mapSize: 2048,
     bias: -0.0001,
-    normalBias: 0.018,
+    normalBias: 0.006,
   },
   floorTexture: {
     size: 192,
@@ -27,7 +27,7 @@ export const renderConfig = {
   },
   lighting: {
     toneMappingExposure: 1.03,
-    ambientIntensity: 0.45,
+    ambientIntensity: 0.43,
     rimPointIntensity: 0.32,
     environmentIntensity: 0.46,
   },
