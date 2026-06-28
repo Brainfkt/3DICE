@@ -61,10 +61,8 @@ export function Floor({ physicsProfile }: FloorProps) {
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[size, size, OPEN_WORLD_SEGMENTS, OPEN_WORLD_SEGMENTS]} />
         <meshStandardMaterial
-          color="#ffffff"
+          color={renderConfig.palette.floor}
           map={floorTexture}
-          bumpMap={floorTexture}
-          bumpScale={0.007}
           roughness={0.96}
           metalness={0}
         />

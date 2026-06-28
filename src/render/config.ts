@@ -13,11 +13,11 @@ export const renderConfig = {
   floorTexture: {
     size: 192,
     seed: 0x3d1ce,
-    baseValue: 39,
+    baseValue: 205,
     variation: 8,
-    fiberStrength: 7,
-    speckleStrength: 16,
-    repeat: 680,
+    fiberStrength: 4,
+    speckleStrength: 10,
+    repeat: 540,
   },
   ivoryTexture: {
     size: 64,
