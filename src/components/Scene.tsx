@@ -12,7 +12,7 @@ import {
   isRenderPerfEnabled,
   publishRenderMetrics,
 } from "../render/performance";
-import { getDiceShadowState } from "../render/diceShadow";
+import { DiceShadowState, getProjectedDiceShadowState } from "../render/diceShadow";
 
 type SceneProps = {
   physicsProfile: PhysicsProfile;
@@ -37,7 +37,9 @@ const CAMERA_POSITION_SPEED = 8.4;
 const CAMERA_POSITION_CATCHUP_PER_UNIT = 0.85;
 const CAMERA_MAX_POSITION_SPEED = 26;
 const KEY_LIGHT_OFFSET = new THREE.Vector3(...renderConfig.lighting.keyLightOffset);
-const SHADOW_ROTATION = Math.atan2(-KEY_LIGHT_OFFSET.z, -KEY_LIGHT_OFFSET.x);
+const BASE_DICE_ROTATION = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(0.1, -0.28, 0.18),
+);
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -216,40 +218,72 @@ function createDiceShadowTexture(size: number) {
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
-  const context = canvas.getContext("2d");
-
-  if (context) {
-    const center = size / 2;
-
-    context.clearRect(0, 0, size, size);
-    context.save();
-    context.translate(center, center);
-    context.scale(1, 0.72);
-
-    const gradient = context.createRadialGradient(0, 0, size * 0.04, 0, 0, size * 0.52);
-    gradient.addColorStop(0, "rgba(255, 255, 255, 1)");
-    gradient.addColorStop(0.34, "rgba(230, 230, 230, 0.78)");
-    gradient.addColorStop(0.68, "rgba(105, 105, 105, 0.24)");
-    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-
-    context.fillStyle = gradient;
-    context.fillRect(-center, -center, size, size);
-    context.restore();
-  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
-  return texture;
+  return { canvas, texture };
+}
+
+function drawProjectedShadow(
+  canvas: HTMLCanvasElement,
+  shadow: DiceShadowState,
+) {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  const { width, height } = canvas;
+
+  context.clearRect(0, 0, width, height);
+  if (!shadow.visible) return;
+
+  const points = shadow.points.map(([x, z]) => ({
+    x: x * width,
+    y: (1 - z) * height,
+  }));
+
+  const drawPath = () => {
+    context.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    });
+    context.closePath();
+  };
+
+  context.save();
+  context.filter = `blur(${shadow.blurPx}px)`;
+  context.fillStyle = "rgba(0, 0, 0, 0.74)";
+  drawPath();
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.filter = `blur(${Math.max(shadow.blurPx * 0.36, 4)}px)`;
+  context.fillStyle = "rgba(0, 0, 0, 0.24)";
+  drawPath();
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.fillStyle = "rgba(0, 0, 0, 0.055)";
+  drawPath();
+  context.fill();
+  context.restore();
 }
 
 function ProjectedDiceShadow({
   dicePositionRef,
+  diceRotationRef,
 }: {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
+  diceRotationRef: MutableRefObject<THREE.Quaternion>;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const texture = useMemo(
+  const shadowMap = useMemo(
     () => createDiceShadowTexture(renderConfig.diceShadow.textureSize),
     [],
   );
@@ -259,17 +293,20 @@ function ProjectedDiceShadow({
     const material = materialRef.current;
     if (!mesh || !material) return;
 
-    const shadow = getDiceShadowState(
+    const shadow = getProjectedDiceShadowState(
       {
         lightOffset: renderConfig.lighting.keyLightOffset,
         position: dicePositionRef.current,
+        quaternion: diceRotationRef.current,
       },
       renderConfig.diceShadow,
     );
 
+    drawProjectedShadow(shadowMap.canvas, shadow);
+    shadowMap.texture.needsUpdate = true;
     mesh.visible = shadow.visible;
     mesh.position.set(...shadow.position);
-    mesh.scale.set(shadow.scale[0], shadow.scale[1], 1);
+    mesh.scale.set(shadow.size[0], shadow.size[1], 1);
     material.opacity = shadow.opacity;
   });
 
@@ -277,13 +314,13 @@ function ProjectedDiceShadow({
     <mesh
       ref={meshRef}
       position={[0, renderConfig.diceShadow.floorY, 0]}
-      rotation={[-Math.PI / 2, 0, SHADOW_ROTATION]}
+      rotation={[-Math.PI / 2, 0, 0]}
       renderOrder={1}
     >
       <planeGeometry args={[1, 1]} />
       <meshBasicMaterial
         ref={materialRef}
-        alphaMap={texture}
+        map={shadowMap.texture}
         color="#050504"
         depthWrite={false}
         opacity={renderConfig.diceShadow.maxOpacity}
@@ -404,6 +441,7 @@ function RenderMetrics() {
 
 export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: SceneProps) {
   const dicePositionRef = useRef(new THREE.Vector3(0, 0.58, 0));
+  const diceRotationRef = useRef(BASE_DICE_ROTATION.clone());
   const isDiceDraggingRef = useRef(false);
   const search = getCurrentSearch();
   const renderMetricsEnabled = isRenderPerfEnabled(search);
@@ -454,11 +492,15 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
           onThrowStart={onThrowStart}
           onSettle={onSettle}
           trackedPosition={dicePositionRef}
+          trackedRotation={diceRotationRef}
           isDraggingRef={isDiceDraggingRef}
         />
         <Floor physicsProfile={physicsProfile} />
       </Physics>
-      <ProjectedDiceShadow dicePositionRef={dicePositionRef} />
+      <ProjectedDiceShadow
+        dicePositionRef={dicePositionRef}
+        diceRotationRef={diceRotationRef}
+      />
       <Environment
         preset="studio"
         background={false}

@@ -40,6 +40,7 @@ type DiceProps = {
   onThrowStart: () => void;
   onSettle: (face: number) => void;
   trackedPosition?: MutableRefObject<THREE.Vector3>;
+  trackedRotation?: MutableRefObject<THREE.Quaternion>;
   isDraggingRef?: MutableRefObject<boolean>;
 };
 
@@ -160,6 +161,7 @@ export function Dice({
   onThrowStart,
   onSettle,
   trackedPosition,
+  trackedRotation,
   isDraggingRef,
 }: DiceProps) {
   const bodyRef = useRef<RapierRigidBody>(null);
@@ -190,6 +192,7 @@ export function Dice({
     targetPosition.current.copy(INITIAL_POSITION);
     anchorRef.current?.setTranslation(INITIAL_POSITION, true);
     trackedPosition?.current.copy(INITIAL_POSITION);
+    trackedRotation?.current.copy(INITIAL_ROTATION);
     if (isDraggingRef) {
       isDraggingRef.current = false;
     }
@@ -197,7 +200,7 @@ export function Dice({
     hasActiveThrow.current = false;
     setIsDragging(false);
     setDragState(null);
-  }, [isDraggingRef, trackedPosition]);
+  }, [isDraggingRef, trackedPosition, trackedRotation]);
 
   const clampDragTarget = useCallback((point: THREE.Vector3) => {
     return clampDragTargetToReach({
@@ -351,6 +354,13 @@ export function Dice({
 
     const bodyTranslation = body.translation();
     trackedPosition?.current.set(bodyTranslation.x, bodyTranslation.y, bodyTranslation.z);
+    const bodyRotation = body.rotation();
+    trackedRotation?.current.set(
+      bodyRotation.x,
+      bodyRotation.y,
+      bodyRotation.z,
+      bodyRotation.w,
+    );
 
     if (isDragging) {
       anchorRef.current?.setNextKinematicTranslation(targetPosition.current);
@@ -360,12 +370,11 @@ export function Dice({
 
     if (!hasActiveThrow.current) return;
 
-    const rotation = body.rotation();
     const isStill = isRigidBodyNearlyStill(body);
     settleState.current = getNextSettleState(
       settleState.current,
       isStill,
-      detectDiceFace(rotation),
+      detectDiceFace(bodyRotation),
     );
 
     if (settleState.current.settledFace !== null) {
