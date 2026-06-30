@@ -3,12 +3,13 @@ export const renderConfig = {
     dprRange: [1, 1.75] as [number, number],
   },
   shadows: {
-    softSize: 16,
+    softSize: 11,
     softSamples: 12,
-    softFocus: 0.36,
+    softFocus: 0.42,
     mapSize: 2048,
     bias: -0.0001,
-    normalBias: 0.006,
+    normalBias: 0.0025,
+    cameraExtent: 4.8,
   },
   floorTexture: {
     size: 192,
@@ -27,7 +28,7 @@ export const renderConfig = {
   },
   lighting: {
     toneMappingExposure: 1.03,
-    ambientIntensity: 0.43,
+    ambientIntensity: 0.4,
     rimPointIntensity: 0.32,
     environmentIntensity: 0.46,
   },
@@ -35,7 +36,6 @@ export const renderConfig = {
     background: "#151614",
     fog: "#151614",
     floor: "#232521",
-    contactShadow: "#070706",
   },
   performance: {
     sampleDurationMs: 5000,
