@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, PerspectiveCamera, SoftShadows } from "@react-three/drei";
+import { Environment, PerspectiveCamera } from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
 import * as THREE from "three";
 import { MutableRefObject, useEffect, useMemo, useRef } from "react";
@@ -12,6 +12,7 @@ import {
   isRenderPerfEnabled,
   publishRenderMetrics,
 } from "../render/performance";
+import { getDiceShadowState } from "../render/diceShadow";
 
 type SceneProps = {
   physicsProfile: PhysicsProfile;
@@ -35,7 +36,8 @@ const CAMERA_MAX_LOOK_SPEED = 34;
 const CAMERA_POSITION_SPEED = 8.4;
 const CAMERA_POSITION_CATCHUP_PER_UNIT = 0.85;
 const CAMERA_MAX_POSITION_SPEED = 26;
-const KEY_LIGHT_OFFSET = new THREE.Vector3(2.5, 7.4, 2.4);
+const KEY_LIGHT_OFFSET = new THREE.Vector3(...renderConfig.lighting.keyLightOffset);
+const SHADOW_ROTATION = Math.atan2(-KEY_LIGHT_OFFSET.z, -KEY_LIGHT_OFFSET.x);
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -209,6 +211,90 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
 type FollowDirectionalLightProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
 };
+
+function createDiceShadowTexture(size: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+
+  if (context) {
+    const center = size / 2;
+
+    context.clearRect(0, 0, size, size);
+    context.save();
+    context.translate(center, center);
+    context.scale(1, 0.72);
+
+    const gradient = context.createRadialGradient(0, 0, size * 0.04, 0, 0, size * 0.52);
+    gradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+    gradient.addColorStop(0.34, "rgba(230, 230, 230, 0.78)");
+    gradient.addColorStop(0.68, "rgba(105, 105, 105, 0.24)");
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+    context.fillStyle = gradient;
+    context.fillRect(-center, -center, size, size);
+    context.restore();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function ProjectedDiceShadow({
+  dicePositionRef,
+}: {
+  dicePositionRef: MutableRefObject<THREE.Vector3>;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const texture = useMemo(
+    () => createDiceShadowTexture(renderConfig.diceShadow.textureSize),
+    [],
+  );
+
+  useFrame(() => {
+    const mesh = meshRef.current;
+    const material = materialRef.current;
+    if (!mesh || !material) return;
+
+    const shadow = getDiceShadowState(
+      {
+        lightOffset: renderConfig.lighting.keyLightOffset,
+        position: dicePositionRef.current,
+      },
+      renderConfig.diceShadow,
+    );
+
+    mesh.visible = shadow.visible;
+    mesh.position.set(...shadow.position);
+    mesh.scale.set(shadow.scale[0], shadow.scale[1], 1);
+    material.opacity = shadow.opacity;
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={[0, renderConfig.diceShadow.floorY, 0]}
+      rotation={[-Math.PI / 2, 0, SHADOW_ROTATION]}
+      renderOrder={1}
+    >
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial
+        ref={materialRef}
+        alphaMap={texture}
+        color="#050504"
+        depthWrite={false}
+        opacity={renderConfig.diceShadow.maxOpacity}
+        polygonOffset
+        polygonOffsetFactor={-1}
+        toneMapped={false}
+        transparent
+      />
+    </mesh>
+  );
+}
 
 function FollowDirectionalLight({ dicePositionRef }: FollowDirectionalLightProps) {
   const lightRef = useRef<THREE.DirectionalLight>(null);
