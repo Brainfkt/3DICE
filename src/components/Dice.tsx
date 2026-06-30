@@ -474,7 +474,6 @@ export function Dice({
         />
         <group onPointerDown={handlePointerDown}>
           <RoundedBox
-            castShadow
             receiveShadow
             args={[DICE_SIZE, DICE_SIZE, DICE_SIZE]}
             radius={0.16}

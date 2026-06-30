@@ -328,18 +328,8 @@ function FollowDirectionalLight({ dicePositionRef }: FollowDirectionalLightProps
       <primitive object={target} />
       <directionalLight
         ref={lightRef}
-        castShadow
         position={KEY_LIGHT_OFFSET.toArray()}
         intensity={2.35}
-        shadow-mapSize={[renderConfig.shadows.mapSize, renderConfig.shadows.mapSize]}
-        shadow-bias={renderConfig.shadows.bias}
-        shadow-normalBias={renderConfig.shadows.normalBias}
-        shadow-camera-left={-renderConfig.shadows.cameraExtent}
-        shadow-camera-right={renderConfig.shadows.cameraExtent}
-        shadow-camera-top={renderConfig.shadows.cameraExtent}
-        shadow-camera-bottom={-renderConfig.shadows.cameraExtent}
-        shadow-camera-near={0.5}
-        shadow-camera-far={28}
       />
     </>
   );
@@ -422,7 +412,6 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
   return (
     <Canvas
       className="scene-canvas"
-      shadows="soft"
       dpr={dpr}
       gl={{
         antialias: true,
@@ -445,11 +434,6 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         resetKey={resetKey}
       />
       {renderMetricsEnabled ? <RenderMetrics /> : null}
-      <SoftShadows
-        size={renderConfig.shadows.softSize}
-        samples={renderConfig.shadows.softSamples}
-        focus={renderConfig.shadows.softFocus}
-      />
 
       <ambientLight intensity={renderConfig.lighting.ambientIntensity} />
       <FollowDirectionalLight dicePositionRef={dicePositionRef} />
@@ -474,6 +458,7 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         />
         <Floor physicsProfile={physicsProfile} />
       </Physics>
+      <ProjectedDiceShadow dicePositionRef={dicePositionRef} />
       <Environment
         preset="studio"
         background={false}
