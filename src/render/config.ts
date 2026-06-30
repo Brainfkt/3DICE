@@ -2,14 +2,19 @@ export const renderConfig = {
   canvas: {
     dprRange: [1, 1.75] as [number, number],
   },
-  shadows: {
-    softSize: 11,
-    softSamples: 12,
-    softFocus: 0.42,
-    mapSize: 2048,
-    bias: -0.0001,
-    normalBias: 0.0025,
-    cameraExtent: 4.8,
+  diceShadow: {
+    baseScaleX: 0.96,
+    baseScaleZ: 0.74,
+    fadeHeight: 2.75,
+    floorY: 0.014,
+    liftScaleX: 0.82,
+    liftScaleZ: 0.58,
+    maxOpacity: 0.43,
+    minVisibleOpacity: 0.018,
+    offsetStrength: 0.88,
+    opacityPower: 1.85,
+    restHeight: 0.58,
+    textureSize: 192,
   },
   floorTexture: {
     size: 192,
@@ -29,6 +34,7 @@ export const renderConfig = {
   lighting: {
     toneMappingExposure: 1.03,
     ambientIntensity: 0.4,
+    keyLightOffset: [2.5, 7.4, 2.4] as [number, number, number],
     rimPointIntensity: 0.32,
     environmentIntensity: 0.46,
   },
