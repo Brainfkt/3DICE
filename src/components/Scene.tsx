@@ -1,18 +1,35 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, PerspectiveCamera } from "@react-three/drei";
+import {
+  ContactShadows,
+  Environment,
+  Lightformer,
+  PerspectiveCamera,
+} from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
 import * as THREE from "three";
-import { MutableRefObject, useEffect, useMemo, useRef } from "react";
+import {
+  MutableRefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Dice } from "./Dice";
 import { Floor } from "./Floor";
-import { PhysicsProfile } from "../physics/config";
+import { PhysicsProfile, physicsSimulationConfig } from "../physics/config";
+import { isPhysicsDebugEnabled } from "../physics/telemetry";
 import { renderConfig } from "../render/config";
 import {
   getRenderDprSetting,
   isRenderPerfEnabled,
   publishRenderMetrics,
 } from "../render/performance";
-import { DiceShadowState, getProjectedDiceShadowState } from "../render/diceShadow";
+import {
+  LightSourceConfig,
+  setLightPosition,
+} from "../render/lighting";
 
 type SceneProps = {
   physicsProfile: PhysicsProfile;
@@ -21,7 +38,12 @@ type SceneProps = {
   onSettle: (face: number) => void;
 };
 
-const BASE_CAMERA_POSITION = new THREE.Vector3(8.2, 5.6, 9.4);
+type SceneActivity = {
+  active: boolean;
+  epoch: string;
+};
+
+const BASE_CAMERA_POSITION = new THREE.Vector3(7.1, 5, 8.2);
 const BASE_LOOK_AT = new THREE.Vector3(0, 0.36, 0);
 const BASE_CAMERA_OFFSET = BASE_CAMERA_POSITION.clone().sub(BASE_LOOK_AT);
 const MIN_CAMERA_ZOOM = 0.62;
@@ -36,10 +58,9 @@ const CAMERA_MAX_LOOK_SPEED = 34;
 const CAMERA_POSITION_SPEED = 8.4;
 const CAMERA_POSITION_CATCHUP_PER_UNIT = 0.85;
 const CAMERA_MAX_POSITION_SPEED = 26;
-const KEY_LIGHT_OFFSET = new THREE.Vector3(...renderConfig.lighting.keyLightOffset);
-const BASE_DICE_ROTATION = new THREE.Quaternion().setFromEuler(
-  new THREE.Euler(0.1, -0.28, 0.18),
-);
+const CAMERA_POSITION_SETTLE_EPSILON = 0.001;
+const CAMERA_LOOK_SETTLE_EPSILON = 0.001;
+const CAMERA_ZOOM_SETTLE_EPSILON = 0.0005;
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -49,6 +70,46 @@ function getCurrentSearch() {
   return typeof window === "undefined" ? "" : window.location.search;
 }
 
+function ActiveFrameDriver({ active }: { active: boolean }) {
+  const clock = useThree((state) => state.clock);
+  const invalidate = useThree((state) => state.invalidate);
+  const wasActive = useRef(false);
+
+  useLayoutEffect(() => {
+    if (active && !wasActive.current) {
+      // Demand rendering lets the shared clock age while the scene sleeps.
+      // Consume that stale delta before Rapier's first fixed-step frame.
+      clock.getDelta();
+      invalidate();
+    }
+
+    wasActive.current = active;
+  }, [active, clock, invalidate]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // A background tab can suspend RAF for seconds. Stopping the clock
+        // makes its first delta after resume equal to zero instead of 0.5s.
+        clock.stop();
+      } else if (active) {
+        invalidate();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [active, clock, invalidate]);
+
+  useFrame(() => {
+    if (active) invalidate();
+  }, physicsSimulationConfig.updatePriority - 1);
+
+  return null;
+}
+
 type CameraRigProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
   isDiceDraggingRef: MutableRefObject<boolean>;
@@ -56,7 +117,7 @@ type CameraRigProps = {
 };
 
 function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigProps) {
-  const { camera, gl } = useThree();
+  const { camera, gl, invalidate } = useThree();
   const lookAtRef = useRef(BASE_LOOK_AT.clone());
   const desiredPosition = useMemo(() => new THREE.Vector3(), []);
   const desiredLookAt = useMemo(() => new THREE.Vector3(), []);
@@ -87,6 +148,7 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
         MIN_CAMERA_ZOOM,
         MAX_CAMERA_ZOOM,
       );
+      invalidate();
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -109,6 +171,7 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
         MIN_CAMERA_ZOOM,
         MAX_CAMERA_ZOOM,
       );
+      invalidate();
     };
 
     const handlePointerUp = (event: PointerEvent) => {
@@ -135,7 +198,7 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
       element.removeEventListener("pointercancel", handlePointerUp);
       element.removeEventListener("pointerleave", handlePointerUp);
     };
-  }, [gl.domElement]);
+  }, [gl.domElement, invalidate]);
 
   useEffect(() => {
     lookAtRef.current.copy(BASE_LOOK_AT);
@@ -149,9 +212,11 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
     camera.position.copy(BASE_CAMERA_POSITION);
     camera.lookAt(lookAtRef.current);
     camera.updateProjectionMatrix();
-  }, [camera, desiredLookAt, desiredPosition, resetKey]);
+    invalidate();
+  }, [camera, desiredLookAt, desiredPosition, invalidate, resetKey]);
 
   useFrame((_, delta) => {
+    const safeDelta = Math.min(delta, 1 / 30);
     const dicePosition = dicePositionRef.current;
     const diceHeightLift = Math.min(Math.max(dicePosition.y - 0.58, 0), 2.2) * 0.18;
     const isDiceDragging = isDiceDraggingRef.current;
@@ -170,11 +235,13 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
       AUTO_ZOOM_MAX,
     );
 
+    const desiredZoom = Math.max(zoomTarget.current, autoZoom);
+
     zoomCurrent.current = THREE.MathUtils.damp(
       zoomCurrent.current,
-      Math.max(zoomTarget.current, autoZoom),
+      desiredZoom,
       CAMERA_ZOOM_SPEED,
-      delta,
+      safeDelta,
     );
 
     lookAtDelta.copy(desiredLookAt).sub(lookAtRef.current);
@@ -185,7 +252,7 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
           CAMERA_LOOK_SPEED + lookAtLag * CAMERA_CATCHUP_PER_UNIT,
           CAMERA_LOOK_SPEED,
           CAMERA_MAX_LOOK_SPEED,
-        ) * delta;
+        ) * safeDelta;
 
       lookAtRef.current.add(
         lookAtDelta.multiplyScalar(Math.min(maxLookStep / lookAtLag, 1)),
@@ -203,146 +270,44 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
       CAMERA_MAX_POSITION_SPEED,
     );
 
-    camera.position.lerp(desiredPosition, 1 - Math.exp(-delta * positionSpeed));
+    camera.position.lerp(
+      desiredPosition,
+      1 - Math.exp(-safeDelta * positionSpeed),
+    );
     camera.lookAt(lookAtRef.current);
+
+    if (
+      lookAtRef.current.distanceTo(desiredLookAt) > CAMERA_LOOK_SETTLE_EPSILON ||
+      camera.position.distanceTo(desiredPosition) > CAMERA_POSITION_SETTLE_EPSILON ||
+      Math.abs(zoomCurrent.current - desiredZoom) > CAMERA_ZOOM_SETTLE_EPSILON
+    ) {
+      invalidate();
+    }
   });
 
   return null;
 }
 
-type FollowDirectionalLightProps = {
+type StudioLightsProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
 };
 
-function createDiceShadowTexture(size: number) {
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return { canvas, texture };
-}
-
-function drawProjectedShadow(
-  canvas: HTMLCanvasElement,
-  shadow: DiceShadowState,
-) {
-  const context = canvas.getContext("2d");
-  if (!context) return;
-
-  const { width, height } = canvas;
-
-  context.clearRect(0, 0, width, height);
-  if (!shadow.visible) return;
-
-  const points = shadow.points.map(([x, z]) => ({
-    x: x * width,
-    y: (1 - z) * height,
-  }));
-
-  const drawPath = () => {
-    context.beginPath();
-    points.forEach((point, index) => {
-      if (index === 0) {
-        context.moveTo(point.x, point.y);
-      } else {
-        context.lineTo(point.x, point.y);
-      }
-    });
-    context.closePath();
-  };
-
-  context.save();
-  context.filter = `blur(${shadow.blurPx}px)`;
-  context.fillStyle = "rgba(0, 0, 0, 0.74)";
-  drawPath();
-  context.fill();
-  context.restore();
-
-  context.save();
-  context.filter = `blur(${Math.max(shadow.blurPx * 0.36, 4)}px)`;
-  context.fillStyle = "rgba(0, 0, 0, 0.24)";
-  drawPath();
-  context.fill();
-  context.restore();
-
-  context.save();
-  context.fillStyle = "rgba(0, 0, 0, 0.055)";
-  drawPath();
-  context.fill();
-  context.restore();
-}
-
-function ProjectedDiceShadow({
-  dicePositionRef,
-  diceRotationRef,
-}: {
+type SpotRigProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
-  diceRotationRef: MutableRefObject<THREE.Quaternion>;
-}) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const shadowMap = useMemo(
-    () => createDiceShadowTexture(renderConfig.diceShadow.textureSize),
-    [],
-  );
+  source: LightSourceConfig;
+};
 
-  useFrame(() => {
-    const mesh = meshRef.current;
-    const material = materialRef.current;
-    if (!mesh || !material) return;
-
-    const shadow = getProjectedDiceShadowState(
-      {
-        lightOffset: renderConfig.lighting.keyLightOffset,
-        position: dicePositionRef.current,
-        quaternion: diceRotationRef.current,
-      },
-      renderConfig.diceShadow,
-    );
-
-    drawProjectedShadow(shadowMap.canvas, shadow);
-    shadowMap.texture.needsUpdate = true;
-    mesh.visible = shadow.visible;
-    mesh.position.set(...shadow.position);
-    mesh.scale.set(shadow.size[0], shadow.size[1], 1);
-    material.opacity = shadow.opacity;
-  });
-
-  return (
-    <mesh
-      ref={meshRef}
-      position={[0, renderConfig.diceShadow.floorY, 0]}
-      rotation={[-Math.PI / 2, 0, 0]}
-      renderOrder={1}
-    >
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial
-        ref={materialRef}
-        map={shadowMap.texture}
-        color="#050504"
-        depthWrite={false}
-        opacity={renderConfig.diceShadow.maxOpacity}
-        polygonOffset
-        polygonOffsetFactor={-1}
-        toneMapped={false}
-        transparent
-      />
-    </mesh>
-  );
-}
-
-function FollowDirectionalLight({ dicePositionRef }: FollowDirectionalLightProps) {
-  const lightRef = useRef<THREE.DirectionalLight>(null);
+function SpotRig({ dicePositionRef, source }: SpotRigProps) {
+  const lightRef = useRef<THREE.SpotLight>(null);
   const target = useMemo(() => new THREE.Object3D(), []);
+  const invalidate = useThree((state) => state.invalidate);
 
   useEffect(() => {
     if (lightRef.current) {
       lightRef.current.target = target;
-      lightRef.current.shadow.camera.updateProjectionMatrix();
+      invalidate();
     }
-  }, [target]);
+  }, [invalidate, target]);
 
   useFrame(() => {
     const dicePosition = dicePositionRef.current;
@@ -352,28 +317,168 @@ function FollowDirectionalLight({ dicePositionRef }: FollowDirectionalLightProps
 
     if (!lightRef.current) return;
 
-    lightRef.current.position.set(
-      dicePosition.x + KEY_LIGHT_OFFSET.x,
-      dicePosition.y + KEY_LIGHT_OFFSET.y,
-      dicePosition.z + KEY_LIGHT_OFFSET.z,
-    );
-    lightRef.current.target.updateMatrixWorld();
+    setLightPosition(dicePosition, source, lightRef.current.position);
   });
 
   return (
     <>
       <primitive object={target} />
-      <directionalLight
+      <spotLight
         ref={lightRef}
-        position={KEY_LIGHT_OFFSET.toArray()}
-        intensity={2.35}
+        angle={source.angle}
+        castShadow={source.castShadow}
+        color={source.color}
+        decay={source.decay}
+        distance={source.distance}
+        intensity={source.intensity}
+        penumbra={source.penumbra}
+        position={source.offset}
+        shadow-bias={source.shadow?.bias}
+        shadow-camera-far={source.shadow?.far}
+        shadow-camera-near={source.shadow?.near}
+        shadow-intensity={source.shadow?.intensity}
+        shadow-mapSize={[source.shadow?.mapSize ?? 1024, source.shadow?.mapSize ?? 1024]}
+        shadow-normalBias={source.shadow?.normalBias}
+        shadow-radius={source.shadow?.radius}
       />
     </>
   );
 }
 
+function PointRig({
+  dicePositionRef,
+  source,
+}: {
+  dicePositionRef: MutableRefObject<THREE.Vector3>;
+  source: LightSourceConfig;
+}) {
+  const lightRef = useRef<THREE.PointLight>(null);
+
+  useFrame(() => {
+    const light = lightRef.current;
+    if (!light) return;
+
+    setLightPosition(dicePositionRef.current, source, light.position);
+  });
+
+  return (
+    <pointLight
+      ref={lightRef}
+      castShadow={source.castShadow}
+      color={source.color}
+      decay={source.decay}
+      distance={source.distance}
+      intensity={source.intensity}
+      position={source.offset}
+    />
+  );
+}
+
+function StudioLights({ dicePositionRef }: StudioLightsProps) {
+  return (
+    <>
+      {renderConfig.lighting.sources.map((source) =>
+        source.kind === "spot" ? (
+          <SpotRig key={source.id} dicePositionRef={dicePositionRef} source={source} />
+        ) : (
+          <PointRig key={source.id} dicePositionRef={dicePositionRef} source={source} />
+        ),
+      )}
+    </>
+  );
+}
+
+function StudioEnvironment() {
+  return (
+    <Environment
+      background={false}
+      environmentIntensity={renderConfig.lighting.environmentIntensity}
+      frames={1}
+      resolution={renderConfig.lighting.environmentResolution}
+    >
+      <color
+        attach="background"
+        args={[renderConfig.lighting.environmentBackground]}
+      />
+      {renderConfig.lighting.lightformers.map((lightformer) => (
+        <Lightformer
+          key={lightformer.id}
+          color={lightformer.color}
+          form="rect"
+          intensity={lightformer.intensity}
+          position={lightformer.position}
+          scale={lightformer.scale}
+          target={lightformer.target}
+        />
+      ))}
+    </Environment>
+  );
+}
+
+function ShadowMapController({
+  dynamic,
+  staticKey,
+}: {
+  dynamic: boolean;
+  staticKey: number;
+}) {
+  const { gl, invalidate } = useThree();
+
+  useLayoutEffect(() => {
+    gl.shadowMap.autoUpdate = dynamic;
+    gl.shadowMap.needsUpdate = true;
+    invalidate();
+
+    return () => {
+      gl.shadowMap.autoUpdate = true;
+    };
+  }, [dynamic, gl, invalidate, staticKey]);
+
+  return null;
+}
+
+function FollowContactShadows({
+  dicePositionRef,
+  dynamic,
+  staticKey,
+}: {
+  dicePositionRef: MutableRefObject<THREE.Vector3>;
+  dynamic: boolean;
+  staticKey: number;
+}) {
+  const shadowRef = useRef<THREE.Group>(null);
+
+  useFrame(() => {
+    const group = shadowRef.current;
+    if (!group) return;
+
+    group.position.set(
+      dicePositionRef.current.x,
+      renderConfig.shadows.floorY,
+      dicePositionRef.current.z,
+    );
+  });
+
+  return (
+    <ContactShadows
+      ref={shadowRef}
+      blur={renderConfig.shadows.contactBlur}
+      color="#030302"
+      far={renderConfig.shadows.contactFar}
+      frames={dynamic ? 0 : 1}
+      name={`contact-shadow-${staticKey}`}
+      opacity={renderConfig.shadows.contactOpacity}
+      position={[0, renderConfig.shadows.floorY, 0]}
+      resolution={renderConfig.shadows.contactResolution}
+      scale={renderConfig.shadows.contactScale}
+      smooth
+      visible={!dynamic}
+    />
+  );
+}
+
 function RenderMetrics() {
-  const { gl, size } = useThree();
+  const { gl, invalidate, size } = useThree();
   const sample = useRef({
     bestFrameMs: Infinity,
     frames: 0,
@@ -391,6 +496,8 @@ function RenderMetrics() {
   }, []);
 
   useFrame(() => {
+    invalidate();
+
     const now = performance.now();
     const current = sample.current;
 
@@ -441,16 +548,52 @@ function RenderMetrics() {
 
 export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: SceneProps) {
   const dicePositionRef = useRef(new THREE.Vector3(0, 0.58, 0));
-  const diceRotationRef = useRef(BASE_DICE_ROTATION.clone());
   const isDiceDraggingRef = useRef(false);
+  const simulationEpoch = `${physicsProfile.id}:${resetKey}`;
+  const [sceneActivity, setSceneActivity] = useState<SceneActivity>({
+    active: false,
+    epoch: simulationEpoch,
+  });
+  const [staticShadowKey, setStaticShadowKey] = useState(0);
   const search = getCurrentSearch();
   const renderMetricsEnabled = isRenderPerfEnabled(search);
+  const physicsDebugEnabled = isPhysicsDebugEnabled(search);
   const dpr = getRenderDprSetting(search);
+  const isSceneActive =
+    sceneActivity.epoch === simulationEpoch && sceneActivity.active;
+
+  const setIsSceneActive = useCallback(
+    (active: boolean) => {
+      setSceneActivity({ active, epoch: simulationEpoch });
+    },
+    [simulationEpoch],
+  );
+
+  const refreshStaticShadow = useCallback(() => {
+    setIsSceneActive(false);
+    setStaticShadowKey((value) => value + 1);
+  }, [setIsSceneActive]);
+
+  useEffect(() => {
+    refreshStaticShadow();
+  }, [refreshStaticShadow, resetKey]);
+
+  const handleThrowStart = useCallback(() => {
+    setIsSceneActive(true);
+    onThrowStart();
+  }, [onThrowStart, setIsSceneActive]);
+
+  const handleSettle = useCallback((face: number) => {
+    onSettle(face);
+    refreshStaticShadow();
+  }, [onSettle, refreshStaticShadow]);
 
   return (
     <Canvas
       className="scene-canvas"
+      shadows
       dpr={dpr}
+      frameloop="demand"
       gl={{
         antialias: true,
         powerPreference: "high-performance",
@@ -461,51 +604,57 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = renderConfig.lighting.toneMappingExposure;
         gl.outputColorSpace = THREE.SRGBColorSpace;
+        gl.shadowMap.enabled = true;
+        gl.shadowMap.type = THREE.PCFShadowMap;
       }}
     >
       <color attach="background" args={[renderConfig.palette.background]} />
       <fog attach="fog" args={[renderConfig.palette.fog, 24, 145]} />
-      <PerspectiveCamera makeDefault position={[8.2, 5.6, 9.4]} fov={46} near={0.1} far={1200} />
+      <PerspectiveCamera makeDefault position={BASE_CAMERA_POSITION.toArray()} fov={46} near={0.1} far={1200} />
+      <ActiveFrameDriver active={isSceneActive} />
       <CameraRig
         dicePositionRef={dicePositionRef}
         isDiceDraggingRef={isDiceDraggingRef}
         resetKey={resetKey}
       />
       {renderMetricsEnabled ? <RenderMetrics /> : null}
-
+      <ShadowMapController dynamic={isSceneActive} staticKey={staticShadowKey} />
       <ambientLight intensity={renderConfig.lighting.ambientIntensity} />
-      <FollowDirectionalLight dicePositionRef={dicePositionRef} />
-      <pointLight
-        position={[-3, 3.4, -2.5]}
-        intensity={renderConfig.lighting.rimPointIntensity}
-        color="#ded3bf"
+      <hemisphereLight
+        color={renderConfig.lighting.hemisphereSkyColor}
+        groundColor={renderConfig.lighting.hemisphereGroundColor}
+        intensity={renderConfig.lighting.hemisphereIntensity}
       />
+      <StudioLights dicePositionRef={dicePositionRef} />
 
       <Physics
         key={physicsProfile.id}
         gravity={physicsProfile.gravity}
-        timeStep="vary"
+        maxCcdSubsteps={physicsSimulationConfig.maxCcdSubsteps}
+        paused={!isSceneActive}
+        timeStep={physicsSimulationConfig.fixedTimeStep}
+        updateLoop="follow"
+        updatePriority={physicsSimulationConfig.updatePriority}
       >
         <Dice
+          key={resetKey}
+          physicsDebugEnabled={physicsDebugEnabled}
           physicsProfile={physicsProfile}
           resetKey={resetKey}
-          onThrowStart={onThrowStart}
-          onSettle={onSettle}
+          onDragChange={setIsSceneActive}
+          onThrowStart={handleThrowStart}
+          onSettle={handleSettle}
           trackedPosition={dicePositionRef}
-          trackedRotation={diceRotationRef}
           isDraggingRef={isDiceDraggingRef}
         />
         <Floor physicsProfile={physicsProfile} />
       </Physics>
-      <ProjectedDiceShadow
+      <FollowContactShadows
         dicePositionRef={dicePositionRef}
-        diceRotationRef={diceRotationRef}
+        dynamic={isSceneActive}
+        staticKey={staticShadowKey}
       />
-      <Environment
-        preset="studio"
-        background={false}
-        environmentIntensity={renderConfig.lighting.environmentIntensity}
-      />
+      <StudioEnvironment />
     </Canvas>
   );
 }

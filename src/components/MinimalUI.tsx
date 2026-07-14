@@ -52,7 +52,7 @@ export function MinimalUI({
           ))}
         </div>
       ) : null}
-      <p className="help-text">Drag and release to throw</p>
+      <p className="help-text">Drag and release, or press Space</p>
     </div>
   );
 }

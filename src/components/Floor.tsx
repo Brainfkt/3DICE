@@ -1,49 +1,53 @@
 import { CuboidCollider, RigidBody } from "@react-three/rapier";
-import { useMemo } from "react";
+import { useThree } from "@react-three/fiber";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { PhysicsProfile } from "../physics/config";
 import { renderConfig } from "../render/config";
-import { createFloorTextureData } from "../render/floorTexture";
+import { createFloorPbrTextures } from "../render/floorTexture";
 
 type FloorProps = {
   physicsProfile: PhysicsProfile;
 };
 
 const OPEN_WORLD_HALF_EXTENT = 1024;
-const OPEN_WORLD_SEGMENTS = 64;
+const FLOOR_NORMAL_SCALE = new THREE.Vector2(
+  renderConfig.materials.floor.normalScale,
+  renderConfig.materials.floor.normalScale,
+);
 
 export function Floor({ physicsProfile }: FloorProps) {
   const floor = physicsProfile.floor;
   const size = OPEN_WORLD_HALF_EXTENT * 2;
-  const floorTexture = useMemo(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = renderConfig.floorTexture.size;
-    canvas.height = renderConfig.floorTexture.size;
-    const context = canvas.getContext("2d");
+  const gl = useThree((state) => state.gl);
+  const floorTextures = useMemo(
+    () =>
+      createFloorPbrTextures(
+        {
+          seed: renderConfig.floorTexture.seed,
+          width: renderConfig.floorTexture.size,
+          height: renderConfig.floorTexture.size,
+          baseValue: renderConfig.floorTexture.baseValue,
+          variation: renderConfig.floorTexture.variation,
+          fiberStrength: renderConfig.floorTexture.fiberStrength,
+          speckleStrength: renderConfig.floorTexture.speckleStrength,
+        },
+        {
+          anisotropy: Math.min(gl.capabilities.getMaxAnisotropy(), 4),
+          repeat: renderConfig.floorTexture.repeat,
+        },
+      ),
+    [gl],
+  );
 
-    if (context) {
-      const imageData = context.createImageData(canvas.width, canvas.height);
-      imageData.data.set(createFloorTextureData({
-        seed: renderConfig.floorTexture.seed,
-        width: canvas.width,
-        height: canvas.height,
-        baseValue: renderConfig.floorTexture.baseValue,
-        variation: renderConfig.floorTexture.variation,
-        fiberStrength: renderConfig.floorTexture.fiberStrength,
-        speckleStrength: renderConfig.floorTexture.speckleStrength,
-      }));
-      context.putImageData(imageData, 0, 0);
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(renderConfig.floorTexture.repeat, renderConfig.floorTexture.repeat);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-    texture.needsUpdate = true;
-    return texture;
-  }, []);
+  useEffect(
+    () => () => {
+      floorTextures.map.dispose();
+      floorTextures.normalMap.dispose();
+      floorTextures.roughnessMap.dispose();
+    },
+    [floorTextures],
+  );
 
   return (
     <RigidBody
@@ -59,11 +63,14 @@ export function Floor({ physicsProfile }: FloorProps) {
         friction={floor.friction}
       />
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[size, size, OPEN_WORLD_SEGMENTS, OPEN_WORLD_SEGMENTS]} />
+        <planeGeometry args={[size, size]} />
         <meshStandardMaterial
           color={renderConfig.palette.floor}
-          map={floorTexture}
-          roughness={0.96}
+          map={floorTextures.map}
+          normalMap={floorTextures.normalMap}
+          normalScale={FLOOR_NORMAL_SCALE}
+          roughness={renderConfig.materials.floor.roughness}
+          roughnessMap={floorTextures.roughnessMap}
           metalness={0}
         />
       </mesh>
