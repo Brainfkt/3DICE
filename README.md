@@ -5,13 +5,15 @@
 ## Features
 
 - Real-time 3D scene built with React Three Fiber.
-- Rapier rigid-body simulation for the die, floor contact and release impulses.
+- Rapier rigid-body simulation for one to four dice, floor contact, die-to-die contact and release impulses.
 - Point-based drag: the exact grabbed point on the die drives the throw and spin.
 - Space-bar throw with a strong forward arc and a natural forward roll.
-- Open floor with camera follow, wheel zoom and pinch zoom.
-- Reset button that restores both die and camera state immediately.
-- Deterministic face detection after the die settles.
-- Minimal overlay: current face, reset action and a short interaction hint.
+- Open floor by default, plus a reusable bounded world with invisible walls.
+- Camera follow, group-aware auto zoom, wheel zoom and pinch zoom.
+- Reset button that restores every die and the camera state immediately.
+- Deterministic face detection for each die after it settles.
+- A collapsed settings panel for die finish, floor/background, world type and dice count.
+- Versioned local settings persistence without accounts, export UI or dependencies.
 
 ## Tech Stack
 
@@ -89,6 +91,8 @@ src/
     floorTexture.ts
     ivoryTexture.ts
     performance.ts
+  settings/
+    config.ts
   styles/
     global.css
   utils/
@@ -106,17 +110,17 @@ On release, the Rapier joint is removed synchronously before recent pointer samp
 
 Because the physics world is paused at rest, the collider mass properties are synchronized when a grab starts. This guarantees that even the first down/up flick uses the configured die mass before Rapier has advanced a frame. Pointer capture also makes focus loss, cancellation and release outside the canvas terminate the drag cleanly.
 
-Pressing Space launches the die through the same point-velocity, off-center impulse and capped torque path, with dedicated keyboard power limits. Its impulse point is reconstructed above the die in world space for every throw, so arbitrary settled faces still produce a high forward arc and a consistent natural forward roll. Key repeat and inputs are ignored, and another keyboard throw is accepted only after the current throw has settled.
+Pressing Space launches every configured die through the same point-velocity, off-center impulse and capped torque path, with dedicated keyboard power limits. Each impulse point is reconstructed above its die in world space, so arbitrary settled faces still produce a high forward arc and a consistent natural forward roll. Key repeat and inputs are ignored, and another keyboard throw is accepted only after the full group has settled. Pointer drag remains per-die.
 
 The balance regression test uses the same gravity, rounded collider, mass, floor contacts, Space impulse and settle detection as the application. It simulates 1,000 consecutive throws with a fixed seed and recenters the settled die horizontally between throws; that translation is neutral on the homogeneous open floor and keeps the headless test numerically stable. It then requires both a Pearson chi-squared score below the 99% rejection threshold and every face count to remain within `31` of the expected `166.67`. The two criteria have a combined false-rejection rate of roughly 5% for a truly uniform 1,000-throw sample. This is a deterministic bias guard for the canonical Space throw, not an end-to-end UI test or a mathematical proof that a finite sample is perfectly uniform.
 
 ## Camera and World
 
-The active scene uses an open world: walls and ceiling are not mounted. The floor collider and visual plane are large enough to keep the surface visually continuous during normal throws.
+The default scene uses an open world: walls and ceiling are not mounted. The floor collider and visual plane are large enough to keep the surface visually continuous during normal throws. The compact settings panel can switch to the retained `BoundedWorld`, which mounts invisible wall and ceiling colliders around a finite textured floor.
 
-The camera follows the die after release with bounded catch-up speed and transient auto-zoom when the die moves far away. Camera motion is frozen while the die is being dragged so grabbing the die does not cause view jumps. Reset restores the die, look target, camera position and zoom state immediately.
+The camera follows the center of the configured dice after release with bounded catch-up speed. Transient auto-zoom reacts both to center lag and to the group's physical spread so separated dice stay framed on mobile. Camera motion is frozen while any die is being dragged. Reset restores all dice, the look target, camera position and zoom state immediately.
 
-The previous bounded world implementation is kept in `src/components/worlds/BoundedWorld.tsx` for a future selectable world type.
+Appearance, surface, world type and dice count are stored in a versioned local settings record. There is intentionally no export action: this local single-screen demo has no sharing workflow that would justify it.
 
 ## Face Detection
 
@@ -126,7 +130,7 @@ The detection logic is covered by unit tests in `src/utils/detectDiceFace.test.t
 
 ## Render and Performance
 
-The render path uses native Three.js PBR lighting and shadows without post-processing. The die has an indexed rounded shell with 21 physically concave pips, while deterministic albedo, roughness and normal maps give the resin and graphite floor their microstructure. One inverse-square studio light casts the moving shadow; a tighter contact shadow is calculated only for the static state. Three local light cards build the reflection environment once, without loading a remote HDR. The default device-pixel ratio is capped at `1.5`.
+The render path uses native Three.js PBR lighting and shadows without post-processing. Each die has an indexed rounded shell with 21 physically concave pips, while deterministic albedo, roughness and normal maps give the selected resin and floor their microstructure. One inverse-square studio light casts the moving shadow; a tighter contact shadow is calculated only for the static state. Three local light cards build the reflection environment once, without loading a remote HDR. The default device-pixel ratio is capped at `1.5`. The maximum four-dice diagnostic at mobile DPR 2 measured about `59.86fps`, `16.71ms`, `10` draw calls and `23,196` triangles.
 
 The Canvas renders on demand and Rapier follows that render loop instead of keeping an independent animation callback. A small active-frame driver discards the stale clock delta when the scene wakes, then runs only from grab through settle; Rapier is paused afterward. Drag, throw, camera easing, wheel/pinch zoom, Reset and shadow refreshes explicitly request the frames they need, so an idle scene performs no WebGL draws, physics steps or animation-frame callbacks. Optional performance instrumentation can be enabled with query parameters:
 

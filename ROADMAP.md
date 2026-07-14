@@ -162,12 +162,12 @@ Debug physique retenu 2026-07-13 :
 
 Ces points ne doivent pas passer avant les priorites 1 et 2.
 
-- [ ] Choix discret de couleur/matiere du de.
-- [ ] Choix de plateau ou couleur de fond.
-- [ ] Types de monde : ouvert par defaut, borne reutilisable depuis `BoundedWorld`.
-- [ ] Plusieurs des.
+- [x] Choix discret de couleur/matiere du de.
+- [x] Choix de plateau ou couleur de fond.
+- [x] Types de monde : ouvert par defaut, borne reutilisable depuis `BoundedWorld`.
+- [x] Plusieurs des.
 - [x] Presets de physique, seulement si les valeurs realistes par defaut sont deja solides.
-- [ ] Export ou sauvegarde des reglages, seulement si un vrai besoin apparait.
+- [x] Export ou sauvegarde des reglages, seulement si un vrai besoin apparait.
 
 ## Plus tard - UI/UX
 
@@ -177,16 +177,16 @@ Ces points ne doivent pas transformer la demo en dashboard.
 - [ ] Animation subtile du resultat final.
 - [ ] Aide contextuelle plus claire sur mobile.
 - [ ] Meilleur feedback du bouton Reset.
-- [ ] Eventuel panneau compact de reglages, cache par defaut, apres stabilisation de la physique.
+- [x] Eventuel panneau compact de reglages, cache par defaut, apres stabilisation de la physique.
 
 ## Definition of Done par iteration
 
-- [ ] La modification cible une case prioritaire de cette roadmap.
-- [ ] Le code reste simple et localise.
-- [ ] `npm run build` passe.
-- [ ] `npm run test` passe.
-- [ ] Le comportement est teste manuellement si l'iteration touche la physique ou le rendu.
-- [ ] Cette roadmap est mise a jour : case cochee, note ajoutee ou decision documentee.
+- [x] La modification cible une case prioritaire de cette roadmap.
+- [x] Le code reste simple et localise.
+- [x] `npm run build` passe.
+- [x] `npm run test` passe.
+- [x] Le comportement est teste manuellement si l'iteration touche la physique ou le rendu.
+- [x] Cette roadmap est mise a jour : case cochee, note ajoutee ou decision documentee.
 
 ## Journal d'avancement
 
@@ -226,3 +226,4 @@ Ajouter les notes courtes ici, dans l'ordre chronologique.
 - 2026-07-14 : profil `K` rendu legerement plus leger et rebondissant : gravite `-54`, masse `0.46`, restitution de/sol `0.30/0.23`, damping `0.14/0.05`, friction de/sol `0.74/0.70`. Validation : `npm run build`, `npm run test` (`81` tests), cinq lancers Espace consecutifs puis sequence manuelle court/rapide/vertical/coin, premier rebond mesure `0.73-1.41`, Reset et detection de face OK, aucune traversee, console sans erreur/warning.
 - 2026-07-14 : garde-fou d'equilibre automatise avec `npm run test:balance` : `1000` lancers Espace consecutifs sont simules directement dans Rapier avec graine fixe, configuration/collider/contacts/impulsion/detection de face de production. Le de stabilise est recentre horizontalement entre deux lancers, operation neutre sur le sol homogene ouvert qui evite la derive numerique loin de l'origine. Pose initiale, camera et taille de sol sont partagees avec la scene pour prevenir toute derive future du test. Criteres calibres par simulation multinomiale pour environ `4.93%` de faux rejet combine sur un vrai de uniforme : Pearson `chi2 <= 15.086` a 5 degres de liberte et ecart maximal de `31` autour des `166.67` occurrences attendues. Validation : `npm run build`, `npm run test` (`81` tests) et `npm run test:balance`; distribution `1:170 2:166 3:172 4:153 5:145 6:194`, `chi2=8.66`, ecart max `27.33`, simulation physique `138.65s`. Decision : ce test est un garde-fou du lancer Espace canonique, pas un test UI end-to-end ni une preuve mathematique d'independance.
 - 2026-07-14 : audit final rendu/performance : environnement studio memoise pour garantir que la cubemap/PMREM `256` a `frames=1` n'est pas recapturee aux transitions actif/repos. Validation : `npm run build`, `npm run test` (`81` tests), Playwright desktop repos/vol/stabilise et preuve mobile DPR 2, cavites/ivoire/sol/ombres sans artefact, console applicative propre. Mesures fiables a chaud : `59.98fps` / `16.672ms` desktop DPR 1, warm-flight DPR 2 `60.00fps` / p95 `17.4ms`, `4` appels, `5802` triangles, repos `0` draw/RAF; bundle `1076.34 kB` gzip. Reserve non bloquante : le cout de generation synchrone des cartes procedurales au premier chargement reste a mesurer sur une machine calme.
+- 2026-07-14 : personnalisation tardive integree dans un panneau compact replie par defaut : 4 finitions de de, 4 ambiances sol/fond, monde ouvert ou borne via `BoundedWorld`, et 1 a 4 des. Espace lance le groupe, chaque de reste draggable, les faces sont suivies individuellement et la camera cadre le centre puis la dispersion du groupe. Reglages sauvegardes automatiquement en `localStorage` avec schema `v1` ; pas d'export, sans besoin de partage dans cette demo locale. Validation : `npm run build`, `npm run test` (`85` tests), Playwright desktop/mobile 390x844, open/bounded, apparence/plateau, lancer groupe, drag individuel, Reset, reload persistant et console propre. Cas maximal mobile DPR 2 : `59.86fps`, `16.71ms`, `10` appels, `23196` triangles ; bundle final `1080.03 kB` gzip.
