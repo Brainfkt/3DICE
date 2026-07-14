@@ -1,4 +1,4 @@
-import { ThreeEvent, useThree } from "@react-three/fiber";
+import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import {
   ContactForcePayload,
   ConvexHullCollider,
@@ -70,7 +70,8 @@ type DiceProps = {
   keyboardThrowKey: number;
   keyboardThrowEnabled: boolean;
   parked: boolean;
-  parkingPosition: [number, number, number];
+  parkingAnchorRef: MutableRefObject<THREE.Vector3>;
+  parkingOffset: [number, number, number];
   resetBeforeKeyboardThrow: boolean;
   throwPower: number;
   physicsDebugEnabled?: boolean;
@@ -239,7 +240,8 @@ export function Dice({
   keyboardThrowKey,
   keyboardThrowEnabled,
   parked,
-  parkingPosition,
+  parkingAnchorRef,
+  parkingOffset,
   resetBeforeKeyboardThrow,
   throwPower,
   physicsDebugEnabled = false,
@@ -278,6 +280,7 @@ export function Dice({
     position: THREE.Vector3;
     rotation: THREE.Quaternion;
   } | null>(null);
+  const parkedWorldPosition = useMemo(() => new THREE.Vector3(), []);
   const lastImpactAt = useRef(-Infinity);
   const dragTargetDirtyRef = useRef(false);
   const grabbedLocalAnchor = useRef(new THREE.Vector3());
@@ -839,13 +842,15 @@ export function Dice({
         };
       }
 
-      body.setTranslation(
-        { x: parkingPosition[0], y: parkingPosition[1], z: parkingPosition[2] },
-        true,
+      parkedWorldPosition.set(
+        parkingAnchorRef.current.x + parkingOffset[0],
+        parkingOffset[1],
+        parkingAnchorRef.current.z + parkingOffset[2],
       );
+      body.setTranslation(parkedWorldPosition, false);
       body.setLinvel({ x: 0, y: 0, z: 0 }, true);
       body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      trackedPosition?.current.set(...parkingPosition);
+      trackedPosition?.current.copy(parkedWorldPosition);
       hasActiveThrow.current = false;
       activePointerId.current = null;
       body.sleep();
@@ -863,7 +868,35 @@ export function Dice({
     }
 
     wasParkedRef.current = parked;
-  }, [invalidate, parked, parkingPosition, trackedPosition]);
+  }, [
+    invalidate,
+    parked,
+    parkedWorldPosition,
+    parkingAnchorRef,
+    parkingOffset,
+    trackedPosition,
+  ]);
+
+  useFrame(() => {
+    if (!parked) return;
+    const body = bodyRef.current;
+    if (!body) return;
+
+    parkedWorldPosition.set(
+      parkingAnchorRef.current.x + parkingOffset[0],
+      parkingOffset[1],
+      parkingAnchorRef.current.z + parkingOffset[2],
+    );
+    const current = body.translation();
+    const distanceSquared =
+      (current.x - parkedWorldPosition.x) ** 2 +
+      (current.y - parkedWorldPosition.y) ** 2 +
+      (current.z - parkedWorldPosition.z) ** 2;
+    if (distanceSquared <= 0.000001) return;
+
+    body.setTranslation(parkedWorldPosition, false);
+    trackedPosition?.current.copy(parkedWorldPosition);
+  }, physicsSimulationConfig.updatePriority + 2);
 
   useEffect(() => {
     gl.domElement.style.cursor = dragEnabled
