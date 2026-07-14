@@ -6,33 +6,30 @@ import {
 } from "./config";
 
 describe("stored app settings", () => {
-  it("keeps the open, single ivory die setup as the default", () => {
+  it("keeps the single ivory die setup as the default", () => {
     expect(defaultAppSettings).toEqual({
-      version: 1,
+      version: 2,
       diceAppearanceId: "ivory",
       surfaceId: "graphite",
-      worldType: "open",
       diceCount: 1,
     });
-    expect(SETTINGS_STORAGE_KEY).toContain("v1");
+    expect(SETTINGS_STORAGE_KEY).toContain("v2");
   });
 
   it("restores every supported setting", () => {
     expect(
       parseStoredSettings(
         JSON.stringify({
-          version: 1,
+          version: 2,
           diceAppearanceId: "garnet",
           surfaceId: "clay",
-          worldType: "bounded",
           diceCount: 4,
         }),
       ),
     ).toEqual({
-      version: 1,
+      version: 2,
       diceAppearanceId: "garnet",
       surfaceId: "clay",
-      worldType: "bounded",
       diceCount: 4,
     });
   });
@@ -43,7 +40,6 @@ describe("stored app settings", () => {
         JSON.stringify({
           diceAppearanceId: "missing",
           surfaceId: "midnight",
-          worldType: "infinite",
           diceCount: 12,
         }),
       ),
@@ -53,5 +49,24 @@ describe("stored app settings", () => {
     });
     expect(parseStoredSettings("not-json")).toEqual(defaultAppSettings);
     expect(parseStoredSettings(null)).toEqual(defaultAppSettings);
+  });
+
+  it("migrates useful fields from the previous world-aware schema", () => {
+    expect(
+      parseStoredSettings(
+        JSON.stringify({
+          version: 1,
+          diceAppearanceId: "sage",
+          surfaceId: "sand",
+          worldType: "bounded",
+          diceCount: 3,
+        }),
+      ),
+    ).toEqual({
+      version: 2,
+      diceAppearanceId: "sage",
+      surfaceId: "sand",
+      diceCount: 3,
+    });
   });
 });

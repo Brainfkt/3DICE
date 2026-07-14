@@ -68,37 +68,30 @@ export const surfaceOptions = [
   },
 ] as const;
 
-export const worldTypeOptions = [
-  { id: "open", label: "Ouvert" },
-  { id: "bounded", label: "Borné" },
-] as const;
-
 export const diceCountOptions = [1, 2, 3, 4] as const;
 
 export type DiceAppearanceId = (typeof diceAppearanceOptions)[number]["id"];
 export type DiceAppearance = (typeof diceAppearanceOptions)[number];
 export type SurfaceId = (typeof surfaceOptions)[number]["id"];
 export type SurfaceTheme = (typeof surfaceOptions)[number];
-export type WorldType = (typeof worldTypeOptions)[number]["id"];
 export type DiceCount = (typeof diceCountOptions)[number];
 
 export type AppSettings = {
-  version: 1;
+  version: 2;
   diceAppearanceId: DiceAppearanceId;
   surfaceId: SurfaceId;
-  worldType: WorldType;
   diceCount: DiceCount;
 };
 
 export const defaultAppSettings: AppSettings = {
-  version: 1,
+  version: 2,
   diceAppearanceId: "ivory",
   surfaceId: "graphite",
-  worldType: "open",
   diceCount: 1,
 };
 
-export const SETTINGS_STORAGE_KEY = "3dice.settings.v1";
+export const SETTINGS_STORAGE_KEY = "3dice.settings.v2";
+const LEGACY_SETTINGS_STORAGE_KEY = "3dice.settings.v1";
 
 function hasId<T extends { id: string }>(
   options: readonly T[],
@@ -118,7 +111,7 @@ export function parseStoredSettings(raw: string | null): AppSettings {
     const candidate = JSON.parse(raw) as Partial<AppSettings>;
 
     return {
-      version: 1,
+      version: 2,
       diceAppearanceId: hasId(
         diceAppearanceOptions,
         candidate.diceAppearanceId,
@@ -128,9 +121,6 @@ export function parseStoredSettings(raw: string | null): AppSettings {
       surfaceId: hasId(surfaceOptions, candidate.surfaceId)
         ? candidate.surfaceId
         : defaultAppSettings.surfaceId,
-      worldType: hasId(worldTypeOptions, candidate.worldType)
-        ? candidate.worldType
-        : defaultAppSettings.worldType,
       diceCount: isDiceCount(candidate.diceCount)
         ? candidate.diceCount
         : defaultAppSettings.diceCount,
@@ -144,7 +134,10 @@ export function loadStoredSettings(): AppSettings {
   if (typeof window === "undefined") return defaultAppSettings;
 
   try {
-    return parseStoredSettings(window.localStorage.getItem(SETTINGS_STORAGE_KEY));
+    return parseStoredSettings(
+      window.localStorage.getItem(SETTINGS_STORAGE_KEY) ??
+        window.localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY),
+    );
   } catch {
     return defaultAppSettings;
   }
