@@ -12,11 +12,6 @@ type FloorProps = {
   surface: SurfaceTheme;
 };
 
-const FLOOR_NORMAL_SCALE = new THREE.Vector2(
-  renderConfig.materials.floor.normalScale,
-  renderConfig.materials.floor.normalScale,
-);
-
 type FloorSurfaceProps = {
   repeat: number;
   size: number;
@@ -25,24 +20,40 @@ type FloorSurfaceProps = {
 
 export function FloorSurface({ repeat, size, surface }: FloorSurfaceProps) {
   const gl = useThree((state) => state.gl);
+  const textureProfile = useMemo(() => {
+    switch (surface.texture) {
+      case "wood":
+        return { variation: 14, fiberStrength: 16, speckleStrength: 3, seedOffset: 17 };
+      case "stone":
+        return { variation: 12, fiberStrength: 2, speckleStrength: 18, seedOffset: 31 };
+      case "glass":
+        return { variation: 4, fiberStrength: 1, speckleStrength: 4, seedOffset: 47 };
+      default:
+        return { variation: 7, fiberStrength: 9, speckleStrength: 5, seedOffset: 0 };
+    }
+  }, [surface.texture]);
   const floorTextures = useMemo(
     () =>
       createFloorPbrTextures(
         {
-          seed: renderConfig.floorTexture.seed,
+          seed: renderConfig.floorTexture.seed + textureProfile.seedOffset,
           width: renderConfig.floorTexture.size,
           height: renderConfig.floorTexture.size,
           baseValue: renderConfig.floorTexture.baseValue,
-          variation: renderConfig.floorTexture.variation,
-          fiberStrength: renderConfig.floorTexture.fiberStrength,
-          speckleStrength: renderConfig.floorTexture.speckleStrength,
+          variation: textureProfile.variation,
+          fiberStrength: textureProfile.fiberStrength,
+          speckleStrength: textureProfile.speckleStrength,
         },
         {
           anisotropy: Math.min(gl.capabilities.getMaxAnisotropy(), 4),
           repeat,
         },
       ),
-    [gl, repeat],
+    [gl, repeat, textureProfile],
+  );
+  const normalScale = useMemo(
+    () => new THREE.Vector2(surface.normalScale, surface.normalScale),
+    [surface.normalScale],
   );
 
   useEffect(
@@ -61,10 +72,10 @@ export function FloorSurface({ repeat, size, surface }: FloorSurfaceProps) {
         color={surface.floor}
         map={floorTextures.map}
         normalMap={floorTextures.normalMap}
-        normalScale={FLOOR_NORMAL_SCALE}
-        roughness={renderConfig.materials.floor.roughness}
+        normalScale={normalScale}
+        roughness={surface.roughness}
         roughnessMap={floorTextures.roughnessMap}
-        metalness={0}
+        metalness={surface.metalness}
       />
     </mesh>
   );
@@ -92,7 +103,7 @@ export function Floor({ physicsProfile, surface }: FloorProps) {
         friction={floor.friction}
       />
       <FloorSurface
-        repeat={renderConfig.floorTexture.repeat}
+        repeat={surface.repeat}
         size={size}
         surface={surface}
       />

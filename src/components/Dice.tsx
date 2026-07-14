@@ -1,5 +1,7 @@
 import { ThreeEvent, useThree } from "@react-three/fiber";
 import {
+  ContactForcePayload,
+  ConvexHullCollider,
   RapierRigidBody,
   RigidBody,
   RoundCuboidCollider,
@@ -19,7 +21,6 @@ import {
   useState,
 } from "react";
 import * as THREE from "three";
-import { detectDiceFace } from "../utils/detectDiceFace";
 import {
   appendPointerSample,
   clampDragTargetToReach,
@@ -53,18 +54,29 @@ import {
   PhysicsDebugSampleKind,
 } from "../physics/telemetry";
 import { DiceAppearance } from "../settings/config";
+import { DiceTypeId } from "../settings/config";
+import {
+  detectDieFace,
+  getPolyhedralDieDefinition,
+  PolyhedralDieDefinition,
+} from "../render/polyhedralDice";
 
 type DiceProps = {
   appearance: DiceAppearance;
+  dieType: DiceTypeId;
   dragEnabled: boolean;
   initialPosition: [number, number, number];
   initialRotation: [number, number, number];
   keyboardThrowKey: number;
+  keyboardThrowEnabled: boolean;
   resetBeforeKeyboardThrow: boolean;
+  throwPower: number;
   physicsDebugEnabled?: boolean;
   physicsProfile: PhysicsProfile;
   resetKey: number | string;
   onDragChange?: (isDragging: boolean) => void;
+  onGrab?: () => void;
+  onImpact?: (impact: { position: THREE.Vector3; strength: number }) => void;
   onThrowStart: () => void;
   onSettle: (face: number) => void;
   trackedPosition?: MutableRefObject<THREE.Vector3>;
@@ -78,6 +90,86 @@ const diceGeometries = createRecessedDiceGeometries({
   ...renderConfig.diceGeometry,
   size: DICE_SIZE,
 });
+
+const labelTextureCache = new Map<string, THREE.CanvasTexture>();
+
+function getLabelTexture(value: number, color: string) {
+  const key = `${value}:${color}`;
+  const cached = labelTextureCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas 2D is required for polyhedral labels");
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = color;
+  context.font = "600 68px Inter, system-ui, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(String(value), 64, 67);
+  if (value === 6 || value === 9) {
+    context.fillRect(49, 101, 30, 3);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 2;
+  texture.needsUpdate = true;
+  labelTextureCache.set(key, texture);
+  return texture;
+}
+
+function PolyhedralLabels({
+  color,
+  definition,
+}: {
+  color: string;
+  definition: PolyhedralDieDefinition;
+}) {
+  const labelTransforms = useMemo(
+    () =>
+      definition.faces.map((face) => ({
+        position: face.center
+          .clone()
+          .addScaledVector(face.localNormal, 0.006),
+        quaternion: new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          face.localNormal,
+        ),
+        texture: getLabelTexture(face.value, color),
+        value: face.value,
+      })),
+    [color, definition],
+  );
+
+  return (
+    <>
+      {labelTransforms.map((label) => (
+        <mesh
+          key={label.value}
+          position={label.position}
+          quaternion={label.quaternion}
+          renderOrder={2}
+          scale={definition.labelScale}
+        >
+          <planeGeometry args={[1, 1]} />
+          <meshBasicMaterial
+            alphaTest={0.18}
+            depthWrite={false}
+            map={label.texture}
+            polygonOffset
+            polygonOffsetFactor={-2}
+            toneMapped={false}
+            transparent
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
 
 type BodyMotionLimits = {
   releaseLinearSoftLimit: number;
@@ -138,15 +230,20 @@ type DragState = {
 
 export function Dice({
   appearance,
+  dieType,
   dragEnabled,
   initialPosition,
   initialRotation,
   keyboardThrowKey,
+  keyboardThrowEnabled,
   resetBeforeKeyboardThrow,
+  throwPower,
   physicsDebugEnabled = false,
   physicsProfile,
   resetKey,
   onDragChange,
+  onGrab,
+  onImpact,
   onThrowStart,
   onSettle,
   trackedPosition,
@@ -172,6 +269,7 @@ export function Dice({
   const pointerSamples = useRef<PointerSample[]>([]);
   const activePointerId = useRef<number | null>(null);
   const handledKeyboardThrowKey = useRef(keyboardThrowKey);
+  const lastImpactAt = useRef(-Infinity);
   const dragTargetDirtyRef = useRef(false);
   const grabbedLocalAnchor = useRef(new THREE.Vector3());
   const settleState = useRef(createSettleState());
@@ -181,6 +279,10 @@ export function Dice({
   const dragId = useRef(0);
   const { camera, gl, invalidate } = useThree();
   const { world } = useRapier();
+  const polyhedralDefinition = useMemo(
+    () => getPolyhedralDieDefinition(dieType),
+    [dieType],
+  );
   const physicsDebugStore = useMemo(
     () => (physicsDebugEnabled ? createPhysicsDebugStore() : null),
     [physicsDebugEnabled],
@@ -197,7 +299,7 @@ export function Dice({
           renderConfig.materials.dice.normalScale,
           renderConfig.materials.dice.normalScale,
         ),
-        metalness: 0,
+        metalness: appearance.metalness,
         clearcoat: appearance.clearcoat,
         clearcoatRoughness: appearance.clearcoatRoughness,
         clearcoatNormalMap: ivoryTextures.normalMap,
@@ -208,8 +310,13 @@ export function Dice({
         ior: renderConfig.materials.dice.ior,
         specularIntensity: renderConfig.materials.dice.specularIntensity,
         sheen: 0,
+        transmission: appearance.transmission,
+        thickness: appearance.transmission > 0 ? 0.72 : 0,
+        transparent: appearance.transmission > 0,
+        opacity: appearance.transmission > 0 ? 0.9 : 1,
+        flatShading: dieType !== "d6",
       }),
-    [appearance],
+    [appearance, dieType],
   );
   const pipMaterial = useMemo(
     () =>
@@ -328,7 +435,7 @@ export function Dice({
     settleState.current = getNextSettleState(
       settleState.current,
       true,
-      detectDiceFace(body.rotation()),
+      detectDieFace(dieType, body.rotation()),
     );
 
     const settledFace = settleState.current.settledFace;
@@ -338,6 +445,31 @@ export function Dice({
     publishPhysicsDebugSnapshot(body, "settled");
     onSettle(settledFace);
   });
+
+  const handleContactForce = useCallback(
+    (event: ContactForcePayload) => {
+      if (!hasActiveThrow.current || !onImpact) return;
+      const now = performance.now();
+      if (now - lastImpactAt.current < 58) return;
+
+      const strength = THREE.MathUtils.clamp(
+        Math.log1p(Math.max(event.totalForceMagnitude, 0)) / 6,
+        0,
+        1,
+      );
+      if (strength < 0.18) return;
+
+      const body = bodyRef.current;
+      if (!body) return;
+      const translation = body.translation();
+      lastImpactAt.current = now;
+      onImpact({
+        position: new THREE.Vector3(translation.x, 0.012, translation.z),
+        strength,
+      });
+    },
+    [onImpact],
+  );
 
   const detachDragJoint = useCallback(() => {
     const joint = dragJointRef.current;
@@ -563,12 +695,14 @@ export function Dice({
       publishPhysicsDebugSnapshot(body, "release");
       setDragState(null);
       setIsDragging(false);
+      onDragChange?.(false);
       onThrowStart();
       invalidate();
       return true;
     },
     [
       invalidate,
+      onDragChange,
       onThrowStart,
       physicsProfile.dice.mass,
       publishPhysicsDebugSnapshot,
@@ -686,6 +820,7 @@ export function Dice({
     if (handledKeyboardThrowKey.current === keyboardThrowKey) return;
     handledKeyboardThrowKey.current = keyboardThrowKey;
 
+    if (!keyboardThrowEnabled) return;
     if (resetBeforeKeyboardThrow) resetDice();
     if (activePointerId.current !== null || hasActiveThrow.current) return;
 
@@ -698,6 +833,7 @@ export function Dice({
     const { pointVelocity, wristTorqueImpulse } = getKeyboardThrowVectors({
       forwardAxis,
       rightAxis,
+      powerScale: throwPower,
     });
     const localKeyboardPoint = getLocalPointFromWorldOffset(
       {
@@ -724,8 +860,10 @@ export function Dice({
     camera,
     commitThrow,
     keyboardThrowKey,
+    keyboardThrowEnabled,
     resetBeforeKeyboardThrow,
     resetDice,
+    throwPower,
   ]);
 
   useEffect(() => {
@@ -823,6 +961,7 @@ export function Dice({
     settleState.current = createSettleState();
     dragId.current += 1;
     publishPhysicsDebugSnapshot(body, "grab");
+    onGrab?.();
     onDragChange?.(true);
     setDragState({ id: dragId.current, localAnchor });
     setIsDragging(true);
@@ -862,32 +1001,68 @@ export function Dice({
         softCcdPrediction={physicsSimulationConfig.softCcdPrediction}
         position={initialPosition}
         rotation={initialRotation}
+        onContactForce={handleContactForce}
       >
-        <RoundCuboidCollider
-          args={[
-            physicsProfile.dice.colliderHalfExtent,
-            physicsProfile.dice.colliderHalfExtent,
-            physicsProfile.dice.colliderHalfExtent,
-            physicsProfile.dice.colliderBorderRadius,
-          ]}
-          contactSkin={physicsProfile.dice.contactSkin}
-          mass={physicsProfile.dice.mass}
-          friction={physicsProfile.dice.friction}
-          restitution={physicsProfile.dice.restitution}
-        />
+        {polyhedralDefinition ? (
+          <ConvexHullCollider
+            args={[polyhedralDefinition.colliderVertices]}
+            contactSkin={physicsProfile.dice.contactSkin}
+            mass={physicsProfile.dice.mass}
+            friction={physicsProfile.dice.friction}
+            restitution={physicsProfile.dice.restitution}
+          />
+        ) : (
+          <RoundCuboidCollider
+            args={[
+              physicsProfile.dice.colliderHalfExtent,
+              physicsProfile.dice.colliderHalfExtent,
+              physicsProfile.dice.colliderHalfExtent,
+              physicsProfile.dice.colliderBorderRadius,
+            ]}
+            contactSkin={physicsProfile.dice.contactSkin}
+            mass={physicsProfile.dice.mass}
+            friction={physicsProfile.dice.friction}
+            restitution={physicsProfile.dice.restitution}
+          />
+        )}
         <group onPointerDown={dragEnabled ? handlePointerDown : undefined}>
-          <mesh
-            castShadow
-            receiveShadow
-            geometry={diceGeometries.body}
-            material={diceMaterial}
-          />
-          <mesh
-            castShadow
-            receiveShadow
-            geometry={diceGeometries.pips}
-            material={pipMaterial}
-          />
+          {polyhedralDefinition ? (
+            <>
+              <mesh
+                castShadow
+                receiveShadow
+                geometry={polyhedralDefinition.geometry}
+                material={diceMaterial}
+              />
+              <lineSegments renderOrder={1}>
+                <edgesGeometry args={[polyhedralDefinition.geometry, 24]} />
+                <lineBasicMaterial
+                  color={appearance.pipColor}
+                  opacity={0.28}
+                  transparent
+                />
+              </lineSegments>
+              <PolyhedralLabels
+                color={appearance.pipColor}
+                definition={polyhedralDefinition}
+              />
+            </>
+          ) : (
+            <>
+              <mesh
+                castShadow
+                receiveShadow
+                geometry={diceGeometries.body}
+                material={diceMaterial}
+              />
+              <mesh
+                castShadow
+                receiveShadow
+                geometry={diceGeometries.pips}
+                material={pipMaterial}
+              />
+            </>
+          )}
         </group>
       </RigidBody>
     </>

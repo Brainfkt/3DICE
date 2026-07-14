@@ -1,41 +1,96 @@
-import { RotateCcw, SlidersHorizontal } from "lucide-react";
-import { useState } from "react";
-import { PhysicsProfile, PhysicsProfileId } from "../physics/config";
+import {
+  Lock,
+  LockOpen,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { RollHistoryEntry } from "../game/types";
+import {
+  keyboardThrowPowerConfig,
+  PhysicsProfile,
+  PhysicsProfileId,
+} from "../physics/config";
 import {
   AppSettings,
   diceAppearanceOptions,
   diceCountOptions,
+  diceTypeOptions,
+  lightingPresetOptions,
   surfaceOptions,
 } from "../settings/config";
 
 // The preset selector was a temporary calibration tool. Keep the code dormant so it
 // can be re-enabled for future physics tuning without rebuilding the UI from scratch.
 const SHOW_PHYSICS_PRESET_SELECTOR = false;
+const HELP_IDLE_TIMEOUT_MS = 10_000;
+const STANDARD_OPTION_COUNT = 4;
+
+function SpaceKey() {
+  return <kbd className="space-key">Espace</kbd>;
+}
+
+function SettingToggle({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      aria-checked={checked}
+      className="setting-toggle"
+      onClick={() => onChange(!checked)}
+      role="switch"
+      type="button"
+    >
+      <span>{label}</span>
+      <span aria-hidden="true" className="setting-toggle-track">
+        <span className="setting-toggle-knob" />
+      </span>
+    </button>
+  );
+}
 
 type MinimalUIProps = {
   faces: readonly (number | null)[];
+  history: readonly RollHistoryEntry[];
+  lockedDice: readonly boolean[];
   rollingDice: readonly boolean[];
+  resultRevision: number;
   settings: AppSettings;
+  throwRevision: number;
   physicsProfiles: readonly PhysicsProfile[];
   selectedPhysicsProfileId: PhysicsProfileId;
   onPhysicsProfileChange: (profileId: PhysicsProfileId) => void;
   onReset: () => void;
+  onClearHistory: () => void;
   onSettingsChange: (patch: Partial<Omit<AppSettings, "version">>) => void;
-  onSettingsVisibilityChange: () => void;
+  onToggleLock: (diceIndex: number) => void;
 };
 
 export function MinimalUI({
   faces,
+  history,
+  lockedDice,
   rollingDice,
+  resultRevision,
   settings,
+  throwRevision,
   physicsProfiles,
   selectedPhysicsProfileId,
   onPhysicsProfileChange,
   onReset,
+  onClearHistory,
   onSettingsChange,
-  onSettingsVisibilityChange,
+  onToggleLock,
 }: MinimalUIProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpVisible, setHelpVisible] = useState(true);
   const results = faces.map((face, index) =>
     rollingDice[index] ? "…" : face ?? "–",
   );
@@ -51,17 +106,174 @@ export function MinimalUI({
     : hasCompleteResult
       ? String(faces.reduce<number>((total, face) => total + (face ?? 0), 0))
       : "–";
+  const unlockedCount = lockedDice.filter((locked) => !locked).length;
+  const shouldAnimateResult =
+    settings.advancedMode &&
+    settings.resultAnimationEnabled &&
+    hasCompleteResult &&
+    !isAnyDieRolling &&
+    resultRevision > 0;
+  const appearanceOptions = settings.advancedMode
+    ? diceAppearanceOptions
+    : diceAppearanceOptions.slice(0, STANDARD_OPTION_COUNT);
+  const availableSurfaces = settings.advancedMode
+    ? surfaceOptions
+    : surfaceOptions.slice(0, STANDARD_OPTION_COUNT);
+
+  useEffect(() => {
+    if (throwRevision === 0) return;
+
+    setHelpVisible(false);
+    const timeoutId = window.setTimeout(() => {
+      setHelpVisible(true);
+    }, HELP_IDLE_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [throwRevision]);
+
+  const appearanceControls = (
+    <fieldset className="setting-group">
+      <legend>Dé</legend>
+      <div className="swatch-options swatch-options-wrap">
+        {appearanceOptions.map((appearance) => (
+          <button
+            key={appearance.id}
+            aria-label={appearance.label}
+            aria-pressed={settings.diceAppearanceId === appearance.id}
+            className="swatch-button"
+            onClick={() =>
+              onSettingsChange({ diceAppearanceId: appearance.id })
+            }
+            style={{ backgroundColor: appearance.bodyColor }}
+            title={appearance.label}
+            type="button"
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+
+  const surfaceControls = (
+    <fieldset className="setting-group">
+      <legend>Plateau</legend>
+      <div className="swatch-options swatch-options-wrap">
+        {availableSurfaces.map((surface) => (
+          <button
+            key={surface.id}
+            aria-label={surface.label}
+            aria-pressed={settings.surfaceId === surface.id}
+            className="swatch-button surface-swatch"
+            onClick={() => onSettingsChange({ surfaceId: surface.id })}
+            style={{
+              background: `linear-gradient(135deg, ${surface.background} 0 48%, ${surface.floor} 52% 100%)`,
+            }}
+            title={surface.label}
+            type="button"
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+
+  const countControls = (
+    <fieldset className="setting-group">
+      <legend>Dés</legend>
+      <div className="segment-options dice-count-options">
+        {diceCountOptions.map((count) => (
+          <button
+            key={count}
+            aria-label={`${count} dé${count > 1 ? "s" : ""}`}
+            aria-pressed={settings.diceCount === count}
+            onClick={() => onSettingsChange({ diceCount: count })}
+            type="button"
+          >
+            {count}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
 
   return (
     <div className="ui-layer" aria-label="Dice controls">
       <div className="topbar">
-        <div className="face-readout" aria-live="polite">
+        <div
+          key={resultRevision}
+          className={`face-readout ${shouldAnimateResult ? "result-pop" : ""}`}
+          aria-live="polite"
+        >
           <span>{label}</span>
           {isMultiDice ? (
             <span className="dice-total">Somme : {totalLabel}</span>
           ) : null}
+          {settings.advancedMode ? (
+            <span className="advanced-status">
+              {settings.diceType} · puissance {Math.round(settings.throwPower * 100)} %
+            </span>
+          ) : null}
         </div>
+        {settings.advancedMode &&
+        isMultiDice &&
+        hasCompleteResult &&
+        !isAnyDieRolling ? (
+          <div className="lock-strip" aria-label="Verrouiller des dés">
+            {faces.map((face, index) => {
+              const locked = lockedDice[index] ?? false;
+              const cannotLock = !locked && unlockedCount <= 1;
+              return (
+                <button
+                  key={index}
+                  aria-label={`${locked ? "Déverrouiller" : "Verrouiller"} le dé ${index + 1}`}
+                  aria-pressed={locked}
+                  disabled={cannotLock}
+                  onClick={(event) => {
+                    onToggleLock(index);
+                    event.currentTarget.blur();
+                  }}
+                  title={
+                    cannotLock
+                      ? "Au moins un dé doit rester relançable"
+                      : `${locked ? "Déverrouiller" : "Verrouiller"} ${face}`
+                  }
+                  type="button"
+                >
+                  {locked ? (
+                    <Lock aria-hidden="true" size={11} />
+                  ) : (
+                    <LockOpen aria-hidden="true" size={11} />
+                  )}
+                  {face}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        {settings.advancedMode && settings.historyEnabled && history.length > 0 ? (
+          <aside className="history-strip" aria-label="Derniers lancers">
+            <div className="history-title">
+              <span>Historique</span>
+              <button
+                aria-label="Effacer l’historique"
+                onClick={onClearHistory}
+                title="Effacer"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={12} />
+              </button>
+            </div>
+            <ol>
+              {history.slice(0, 5).map((entry) => (
+                <li key={entry.id}>
+                  <span>{entry.type}</span>
+                  <span>{entry.faces.join(" + ")}</span>
+                  <strong>{entry.total}</strong>
+                </li>
+              ))}
+            </ol>
+          </aside>
+        ) : null}
       </div>
+
       <div className="settings-cluster">
         <div className="settings-actions">
           <button
@@ -84,7 +296,6 @@ export function MinimalUI({
             onClick={(event) => {
               const isClosing = settingsOpen;
               setSettingsOpen(!settingsOpen);
-              onSettingsVisibilityChange();
               if (isClosing) event.currentTarget.blur();
             }}
             type="button"
@@ -92,70 +303,163 @@ export function MinimalUI({
             <SlidersHorizontal aria-hidden="true" size={17} strokeWidth={1.8} />
           </button>
         </div>
+
         {settingsOpen ? (
           <section
             aria-label="Réglages de la scène"
-            className="settings-panel"
+            className={`settings-panel ${settings.advancedMode ? "is-advanced" : ""}`}
             id="settings-panel"
           >
-            <fieldset className="setting-group">
-              <legend>Dé</legend>
-              <div className="swatch-options">
-                {diceAppearanceOptions.map((appearance) => (
-                  <button
-                    key={appearance.id}
-                    aria-label={appearance.label}
-                    aria-pressed={settings.diceAppearanceId === appearance.id}
-                    className="swatch-button"
-                    onClick={() =>
-                      onSettingsChange({ diceAppearanceId: appearance.id })
-                    }
-                    style={{ backgroundColor: appearance.bodyColor }}
-                    title={appearance.label}
-                    type="button"
-                  />
-                ))}
+            <SettingToggle
+              checked={settings.advancedMode}
+              label="Mode avancé"
+              onChange={(advancedMode) => onSettingsChange({ advancedMode })}
+            />
+
+            {settings.advancedMode ? (
+              <div className="advanced-settings">
+                <p className="advanced-intro">
+                  Options enrichies et HUD contextuel.
+                </p>
+
+                <details open>
+                  <summary>Apparence</summary>
+                  <div className="advanced-section-content">
+                    {appearanceControls}
+                    {surfaceControls}
+                    <fieldset className="setting-group setting-group-wide">
+                      <legend>Lumière</legend>
+                      <div className="segment-options lighting-options">
+                        {lightingPresetOptions.map((preset) => (
+                          <button
+                            key={preset.id}
+                            aria-pressed={settings.lightingPresetId === preset.id}
+                            onClick={() =>
+                              onSettingsChange({ lightingPresetId: preset.id })
+                            }
+                            title={preset.label}
+                            type="button"
+                          >
+                            {preset.label.replace("Table ", "").replace("Studio ", "")}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  </div>
+                </details>
+
+                <details>
+                  <summary>Dés</summary>
+                  <div className="advanced-section-content">
+                    <fieldset className="setting-group">
+                      <legend>Type</legend>
+                      <div className="segment-options die-type-options">
+                        {diceTypeOptions.map((type) => (
+                          <button
+                            key={type.id}
+                            aria-pressed={settings.diceType === type.id}
+                            onClick={() => onSettingsChange({ diceType: type.id })}
+                            type="button"
+                          >
+                            {type.label}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                    {countControls}
+                  </div>
+                </details>
+
+                <details>
+                  <summary>Lancer et caméra</summary>
+                  <div className="advanced-section-content toggle-stack">
+                    <label className="power-control">
+                      <span>
+                        Puissance
+                        <output>{Math.round(settings.throwPower * 100)} %</output>
+                      </span>
+                      <input
+                        aria-label="Puissance du lancer clavier"
+                        max={keyboardThrowPowerConfig.max}
+                        min={keyboardThrowPowerConfig.min}
+                        onChange={(event) =>
+                          onSettingsChange({
+                            throwPower: Number(event.currentTarget.value),
+                          })
+                        }
+                        step={keyboardThrowPowerConfig.step}
+                        type="range"
+                        value={settings.throwPower}
+                      />
+                    </label>
+                    <SettingToggle
+                      checked={settings.autoRecenterEnabled}
+                      label="Recentrage auto"
+                      onChange={(autoRecenterEnabled) =>
+                        onSettingsChange({ autoRecenterEnabled })
+                      }
+                    />
+                    <SettingToggle
+                      checked={settings.cameraGesturesEnabled}
+                      label="Gestes caméra"
+                      onChange={(cameraGesturesEnabled) =>
+                        onSettingsChange({ cameraGesturesEnabled })
+                      }
+                    />
+                    <p className="shortcut-help">
+                      <kbd>Espace</kbd> lancer · <kbd>R</kbd> reset · <kbd>F</kbd> plein écran
+                    </p>
+                  </div>
+                </details>
+
+                <details>
+                  <summary>Retours</summary>
+                  <div className="advanced-section-content toggle-stack">
+                    <SettingToggle
+                      checked={settings.audioEnabled}
+                      label="Sons physiques"
+                      onChange={(audioEnabled) => onSettingsChange({ audioEnabled })}
+                    />
+                    <SettingToggle
+                      checked={settings.hapticsEnabled}
+                      label="Vibrations"
+                      onChange={(hapticsEnabled) => onSettingsChange({ hapticsEnabled })}
+                    />
+                    <SettingToggle
+                      checked={settings.impactEffectsEnabled}
+                      label="Effets de contact"
+                      onChange={(impactEffectsEnabled) =>
+                        onSettingsChange({ impactEffectsEnabled })
+                      }
+                    />
+                    <SettingToggle
+                      checked={settings.resultAnimationEnabled}
+                      label="Animation du résultat"
+                      onChange={(resultAnimationEnabled) =>
+                        onSettingsChange({ resultAnimationEnabled })
+                      }
+                    />
+                    <SettingToggle
+                      checked={settings.historyEnabled}
+                      label="Historique de session"
+                      onChange={(historyEnabled) =>
+                        onSettingsChange({ historyEnabled })
+                      }
+                    />
+                  </div>
+                </details>
               </div>
-            </fieldset>
-            <fieldset className="setting-group">
-              <legend>Plateau</legend>
-              <div className="swatch-options">
-                {surfaceOptions.map((surface) => (
-                  <button
-                    key={surface.id}
-                    aria-label={surface.label}
-                    aria-pressed={settings.surfaceId === surface.id}
-                    className="swatch-button surface-swatch"
-                    onClick={() => onSettingsChange({ surfaceId: surface.id })}
-                    style={{
-                      background: `linear-gradient(135deg, ${surface.background} 0 48%, ${surface.floor} 52% 100%)`,
-                    }}
-                    title={surface.label}
-                    type="button"
-                  />
-                ))}
+            ) : (
+              <div className="standard-settings">
+                {appearanceControls}
+                {surfaceControls}
+                {countControls}
               </div>
-            </fieldset>
-            <fieldset className="setting-group">
-              <legend>Des</legend>
-              <div className="segment-options dice-count-options">
-                {diceCountOptions.map((count) => (
-                  <button
-                    key={count}
-                    aria-label={`${count} dé${count > 1 ? "s" : ""}`}
-                    aria-pressed={settings.diceCount === count}
-                    onClick={() => onSettingsChange({ diceCount: count })}
-                    type="button"
-                  >
-                    {count}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            <p className="settings-note">Sauvegarde locale automatique</p>
+            )}
           </section>
         ) : null}
       </div>
+
       {SHOW_PHYSICS_PRESET_SELECTOR ? (
         <div className="preset-strip" aria-label="Drop presets">
           {physicsProfiles.map((profile) => (
@@ -173,10 +477,27 @@ export function MinimalUI({
           ))}
         </div>
       ) : null}
-      <p className="help-text">
-        {isMultiDice
-          ? "Espace pour lancer · Espace à nouveau pour relancer"
-          : "Glissez puis relâchez, ou appuyez sur Espace"}
+
+      <p
+        aria-hidden={!helpVisible}
+        className={`help-text ${helpVisible ? "is-visible" : "is-hidden"}`}
+      >
+        <span className="help-copy help-copy-desktop">
+          {isMultiDice ? (
+            <>
+              <SpaceKey /> pour (re)lancer
+            </>
+          ) : (
+            <>
+              Glissez puis relâchez ou <SpaceKey />
+            </>
+          )}
+        </span>
+        <span className="help-copy help-copy-touch">
+          {isMultiDice
+            ? "Tapez sur l’écran pour (re)lancer"
+            : "Glissez puis relâchez ou tapez sur l’écran pour lancer"}
+        </span>
       </p>
     </div>
   );
