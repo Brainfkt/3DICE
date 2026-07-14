@@ -61,8 +61,35 @@ export const physicsSimulationConfig = {
 export const physicsWorldConfig = {
   diceInitialPosition: [0, 0.58, 0] as [number, number, number],
   diceInitialRotationEuler: [0.1, -0.28, 0.18] as [number, number, number],
+  diceLayoutSpacing: 1.42,
   openWorldHalfExtent: 1024,
 } as const;
+
+const diceLayoutCoordinates = {
+  1: [[0, 0]],
+  2: [[-0.5, 0], [0.5, 0]],
+  3: [[-0.58, -0.34], [0.58, -0.34], [0, 0.68]],
+  4: [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]],
+} as const;
+
+export type SupportedDiceCount = keyof typeof diceLayoutCoordinates;
+
+export function getDiceInitialTransforms(count: SupportedDiceCount) {
+  const baseRotation = physicsWorldConfig.diceInitialRotationEuler;
+
+  return diceLayoutCoordinates[count].map(([layoutX, layoutZ], index) => ({
+    position: [
+      layoutX * physicsWorldConfig.diceLayoutSpacing,
+      physicsWorldConfig.diceInitialPosition[1],
+      layoutZ * physicsWorldConfig.diceLayoutSpacing,
+    ] as [number, number, number],
+    rotation: [
+      baseRotation[0] + index * 0.07,
+      baseRotation[1] - index * 0.11,
+      baseRotation[2] + index * 0.05,
+    ] as [number, number, number],
+  }));
+}
 
 const sharedSettle = {
   linearSpeedThreshold: 0.055,

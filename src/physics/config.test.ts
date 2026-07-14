@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultPhysicsProfileId,
+  getDiceInitialTransforms,
   physicsConfig,
   physicsSimulationConfig,
   physicsWorldConfig,
@@ -59,6 +60,37 @@ describe("physicsProfiles", () => {
       0.18,
     ]);
     expect(physicsWorldConfig.openWorldHalfExtent).toBe(1024);
+  });
+
+  it("lays out one to four dice without overlap and around the origin", () => {
+    for (const count of [1, 2, 3, 4] as const) {
+      const transforms = getDiceInitialTransforms(count);
+      expect(transforms).toHaveLength(count);
+
+      const averageX =
+        transforms.reduce((total, transform) => total + transform.position[0], 0) /
+        count;
+      const averageZ =
+        transforms.reduce((total, transform) => total + transform.position[2], 0) /
+        count;
+
+      expect(averageX).toBeCloseTo(0, 8);
+      expect(averageZ).toBeCloseTo(0, 8);
+
+      for (let first = 0; first < transforms.length; first += 1) {
+        expect(transforms[first].position[1]).toBe(
+          physicsWorldConfig.diceInitialPosition[1],
+        );
+
+        for (let second = first + 1; second < transforms.length; second += 1) {
+          const dx =
+            transforms[first].position[0] - transforms[second].position[0];
+          const dz =
+            transforms[first].position[2] - transforms[second].position[2];
+          expect(Math.hypot(dx, dz)).toBeGreaterThan(1.12);
+        }
+      }
+    }
   });
 
   it("uses the selected K profile as the product default", () => {

@@ -1,7 +1,7 @@
 export const diceAppearanceOptions = [
   {
     id: "ivory",
-    label: "Ivoire satine",
+    label: "Ivoire satiné",
     bodyColor: "#fffaf2",
     pipColor: "#050403",
     roughness: 0.5,
@@ -70,7 +70,7 @@ export const surfaceOptions = [
 
 export const worldTypeOptions = [
   { id: "open", label: "Ouvert" },
-  { id: "bounded", label: "Borne" },
+  { id: "bounded", label: "Borné" },
 ] as const;
 
 export const diceCountOptions = [1, 2, 3, 4] as const;
