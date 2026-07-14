@@ -11,6 +11,41 @@ const polyhedralTypes = diceTypeOptions
   .map((option) => option.id)
   .filter((type): type is Exclude<DiceTypeId, "d6"> => type !== "d6");
 
+function getPlanarFaceAreas(type: Exclude<DiceTypeId, "d6">) {
+  const definition = getPolyhedralDieDefinition(type)!;
+  const geometry = definition.geometry.index
+    ? definition.geometry.toNonIndexed()
+    : definition.geometry.clone();
+  const position = geometry.getAttribute("position");
+  const areas = definition.faces.map(() => 0);
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  for (let index = 0; index < position.count; index += 3) {
+    a.fromBufferAttribute(position, index);
+    b.fromBufferAttribute(position, index + 1);
+    c.fromBufferAttribute(position, index + 2);
+    normal.crossVectors(b.clone().sub(a), c.clone().sub(a)).normalize();
+    const center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+    if (normal.dot(center) < 0) normal.multiplyScalar(-1);
+
+    const faceIndex = definition.faces.reduce(
+      (bestIndex, face, candidateIndex) =>
+        face.localNormal.dot(normal) >
+        definition.faces[bestIndex].localNormal.dot(normal)
+          ? candidateIndex
+          : bestIndex,
+      0,
+    );
+    areas[faceIndex] += new THREE.Triangle(a, b, c).getArea();
+  }
+
+  geometry.dispose();
+  return areas;
+}
+
 describe("polyhedral dice", () => {
   it.each(polyhedralTypes)("creates a convex labelled %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
@@ -32,6 +67,16 @@ describe("polyhedral dice", () => {
       );
       expect(detectDieFace(type, rotation)).toBe(face.value);
     }
+  });
+
+  it.each(polyhedralTypes)("keeps equal landing-face areas on %s", (type) => {
+    const areas = getPlanarFaceAreas(type);
+    const average = areas.reduce((sum, area) => sum + area, 0) / areas.length;
+    const largestDeviation = Math.max(
+      ...areas.map((area) => Math.abs(area - average) / average),
+    );
+
+    expect(largestDeviation).toBeLessThan(0.001);
   });
 
   it("keeps the production d6 detector unchanged", () => {
