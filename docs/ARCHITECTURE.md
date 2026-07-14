@@ -10,16 +10,17 @@ App
     CameraRig
     FollowDirectionalLight
     Physics
-      Dice
-      Floor
+      Dice x 1..4
+      Floor | BoundedWorld
   MinimalUI
 ```
 
-- `App.tsx` owns result state, rolling state, reset key and the active physics profile.
+- `App.tsx` owns per-die result/rolling state, reset key, the active physics profile and versioned local settings.
 - `Scene.tsx` owns the canvas, lights, camera behavior, Rapier world and render metrics hook.
-- `Dice.tsx` owns the die rigid body, drag joint, release impulse and settle detection loop.
-- `Floor.tsx` owns the active open floor collider and material.
-- `MinimalUI.tsx` owns the small overlay.
+- `Dice.tsx` owns one die rigid body, drag joint, release impulse and settle detection loop.
+- `Floor.tsx` owns the reusable PBR floor surface and the active open floor collider.
+- `BoundedWorld.tsx` reuses that surface with invisible wall and ceiling colliders.
+- `MinimalUI.tsx` owns the small overlay and collapsed settings panel.
 
 ## Physics Configuration
 
@@ -51,7 +52,7 @@ On release:
 
 ## Camera
 
-The camera follows a look target derived from the die position. Catch-up speed increases with lag but remains capped to avoid hard snaps.
+The camera follows a look target derived from the average dice position. Catch-up speed increases with lag but remains capped to avoid hard snaps. A second bounded auto-zoom term follows the maximum distance from the group center so scattered dice stay visible.
 
 During drag, camera movement is frozen. This keeps the grab stable and avoids feedback between camera movement and pointer mapping.
 
@@ -65,9 +66,13 @@ Reset is immediate. It restores:
 
 ## Open and Bounded Worlds
 
-The active world is open. It uses a very large floor collider and plane so normal throws do not reveal a visible boundary.
+The default world is open. It uses a very large floor collider and plane so normal throws do not reveal a visible boundary.
 
-`src/components/worlds/BoundedWorld.tsx` keeps the previous bounded-world implementation. It is not mounted by the active scene, but remains available for a future world selector.
+The settings panel can mount `src/components/worlds/BoundedWorld.tsx` instead. Both worlds share the selected floor theme and the same physical floor profile.
+
+## Settings
+
+`src/settings/config.ts` defines four restrained die finishes, four floor/background themes, open/bounded world types and counts from one to four. The settings record is validated field by field before it is restored from `localStorage`; malformed or stale values fall back to the product defaults. No export format is exposed because the demo has no sharing workflow.
 
 ## Testing
 
