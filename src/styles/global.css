@@ -73,7 +73,8 @@ button {
   text-shadow: 0 1px 18px rgba(0, 0, 0, 0.3);
 }
 
-.reset-button {
+.reset-button,
+.settings-button {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -99,16 +100,167 @@ button {
     transform 160ms ease;
 }
 
-.reset-button:hover {
+.reset-button:hover,
+.settings-button:hover,
+.settings-button[aria-expanded="true"] {
   border-color: rgba(238, 231, 211, 0.38);
   background: rgba(37, 39, 35, 0.42);
   color: rgba(255, 249, 232, 0.96);
   transform: translateY(-1px);
 }
 
-.reset-button:focus-visible {
+.reset-button:focus-visible,
+.settings-button:focus-visible,
+.swatch-button:focus-visible,
+.segment-options button:focus-visible {
   outline: 2px solid rgba(240, 231, 204, 0.72);
   outline-offset: 3px;
+}
+
+.settings-cluster {
+  pointer-events: auto;
+  position: absolute;
+  top: clamp(18px, 4vw, 42px);
+  right: clamp(18px, 4vw, 42px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.settings-button {
+  justify-content: center;
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+}
+
+.settings-panel {
+  width: min(244px, calc(100vw - 36px));
+  padding: 15px;
+  border: 1px solid rgba(238, 231, 211, 0.18);
+  border-radius: 11px;
+  color: rgba(242, 236, 220, 0.9);
+  background: rgba(18, 19, 17, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 20px 54px rgba(0, 0, 0, 0.28);
+}
+
+.setting-group {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setting-group + .setting-group {
+  margin-top: 13px;
+}
+
+.setting-group legend {
+  grid-column: 1;
+  float: left;
+  width: 64px;
+  margin: 0;
+  padding: 0;
+  color: rgba(238, 232, 216, 0.64);
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 28px;
+  letter-spacing: 0.01em;
+}
+
+.swatch-options,
+.segment-options {
+  grid-column: 2;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+}
+
+.swatch-button {
+  position: relative;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.surface-swatch {
+  border-radius: 7px;
+}
+
+.swatch-button:hover {
+  transform: translateY(-1px);
+}
+
+.swatch-button[aria-pressed="true"] {
+  border-color: rgba(255, 249, 229, 0.92);
+  box-shadow:
+    0 0 0 2px rgba(19, 20, 18, 0.92),
+    0 0 0 3px rgba(255, 245, 217, 0.58),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+.segment-options {
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid rgba(239, 230, 205, 0.13);
+  border-radius: 7px;
+  background: rgba(8, 9, 8, 0.2);
+}
+
+.segment-options button {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  color: rgba(238, 232, 216, 0.62);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.segment-options button:hover {
+  color: rgba(255, 250, 235, 0.92);
+}
+
+.segment-options button[aria-pressed="true"] {
+  color: rgba(255, 250, 235, 0.96);
+  background: rgba(238, 228, 201, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(245, 235, 207, 0.12);
+}
+
+.dice-count-options button {
+  padding-inline: 0;
+}
+
+.settings-note {
+  margin: 14px 0 0;
+  color: rgba(232, 226, 210, 0.4);
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: right;
 }
 
 .preset-strip {
@@ -208,6 +360,16 @@ button {
     font-size: 14px;
   }
 
+  .settings-button {
+    width: 38px;
+    min-height: 38px;
+  }
+
+  .settings-panel {
+    max-height: calc(100svh - 84px);
+    overflow-y: auto;
+  }
+
   .preset-strip {
     top: 68px;
     gap: 4px;
@@ -218,5 +380,14 @@ button {
     width: 25px;
     height: 29px;
     font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reset-button,
+  .settings-button,
+  .swatch-button,
+  .segment-options button {
+    transition: none;
   }
 }
