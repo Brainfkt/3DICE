@@ -41,15 +41,10 @@ import {
   PhysicsProfile,
   physicsConfig,
   physicsSimulationConfig,
-  physicsWorldConfig,
 } from "../physics/config";
 import { renderConfig } from "../render/config";
 import { createRecessedDiceGeometries } from "../render/diceGeometry";
 import { createIvoryPbrTextures } from "../render/ivoryTexture";
-import {
-  getSpaceThrowKeyAction,
-  SPACE_THROW_BLOCKED_TARGET_SELECTOR,
-} from "../input/keyboardThrow";
 import {
   createPhysicsDebugStore,
   createPhysicsMetricsSnapshot,
@@ -57,8 +52,13 @@ import {
   getPhysicsDebugPhase,
   PhysicsDebugSampleKind,
 } from "../physics/telemetry";
+import { DiceAppearance } from "../settings/config";
 
 type DiceProps = {
+  appearance: DiceAppearance;
+  initialPosition: [number, number, number];
+  initialRotation: [number, number, number];
+  keyboardThrowKey: number;
   physicsDebugEnabled?: boolean;
   physicsProfile: PhysicsProfile;
   resetKey: number;
@@ -70,48 +70,11 @@ type DiceProps = {
 };
 
 const DICE_SIZE = 1.12;
-const INITIAL_POSITION = new THREE.Vector3(
-  ...physicsWorldConfig.diceInitialPosition,
-);
-const INITIAL_ROTATION = new THREE.Quaternion().setFromEuler(
-  new THREE.Euler(...physicsWorldConfig.diceInitialRotationEuler),
-);
-
-const pipMaterial = new THREE.MeshPhysicalMaterial({
-  color: renderConfig.materials.pips.color,
-  roughness: renderConfig.materials.pips.roughness,
-  metalness: 0,
-  clearcoat: renderConfig.materials.pips.clearcoat,
-  clearcoatRoughness: renderConfig.materials.pips.clearcoatRoughness,
-});
 
 const ivoryTextures = createIvoryPbrTextures(renderConfig.ivoryTexture);
 const diceGeometries = createRecessedDiceGeometries({
   ...renderConfig.diceGeometry,
   size: DICE_SIZE,
-});
-
-const diceMaterial = new THREE.MeshPhysicalMaterial({
-  color: renderConfig.materials.dice.color,
-  map: ivoryTextures.map,
-  roughness: renderConfig.materials.dice.roughness,
-  roughnessMap: ivoryTextures.roughnessMap,
-  normalMap: ivoryTextures.normalMap,
-  normalScale: new THREE.Vector2(
-    renderConfig.materials.dice.normalScale,
-    renderConfig.materials.dice.normalScale,
-  ),
-  metalness: 0,
-  clearcoat: renderConfig.materials.dice.clearcoat,
-  clearcoatRoughness: renderConfig.materials.dice.clearcoatRoughness,
-  clearcoatNormalMap: ivoryTextures.normalMap,
-  clearcoatNormalScale: new THREE.Vector2(
-    renderConfig.materials.dice.clearcoatNormalScale,
-    renderConfig.materials.dice.clearcoatNormalScale,
-  ),
-  ior: renderConfig.materials.dice.ior,
-  specularIntensity: renderConfig.materials.dice.specularIntensity,
-  sheen: 0,
 });
 
 type BodyMotionLimits = {
@@ -172,6 +135,10 @@ type DragState = {
 };
 
 export function Dice({
+  appearance,
+  initialPosition,
+  initialRotation,
+  keyboardThrowKey,
   physicsDebugEnabled = false,
   physicsProfile,
   resetKey,
@@ -181,17 +148,26 @@ export function Dice({
   trackedPosition,
   isDraggingRef,
 }: DiceProps) {
+  const initialPositionVector = useMemo(
+    () => new THREE.Vector3(...initialPosition),
+    [initialPosition],
+  );
+  const initialRotationQuaternion = useMemo(
+    () => new THREE.Quaternion().setFromEuler(new THREE.Euler(...initialRotation)),
+    [initialRotation],
+  );
   const bodyRef = useRef<RapierRigidBody>(null);
   const anchorRef = useRef<RapierRigidBody>(null);
   const dragJointRef = useRef<SphericalImpulseJoint | undefined>(undefined);
-  const targetPosition = useRef(INITIAL_POSITION.clone());
+  const targetPosition = useRef(initialPositionVector.clone());
   const dragStartPointer = useRef(new THREE.Vector2());
-  const dragStartTarget = useRef(INITIAL_POSITION.clone());
+  const dragStartTarget = useRef(initialPositionVector.clone());
   const dragRightAxis = useRef(new THREE.Vector3(1, 0, 0));
   const dragForwardAxis = useRef(new THREE.Vector3(0, 0, -1));
   const dragWorldUnitsPerPixel = useRef(0.01);
   const pointerSamples = useRef<PointerSample[]>([]);
   const activePointerId = useRef<number | null>(null);
+  const handledKeyboardThrowKey = useRef(keyboardThrowKey);
   const dragTargetDirtyRef = useRef(false);
   const grabbedLocalAnchor = useRef(new THREE.Vector3());
   const settleState = useRef(createSettleState());
@@ -204,6 +180,51 @@ export function Dice({
   const physicsDebugStore = useMemo(
     () => (physicsDebugEnabled ? createPhysicsDebugStore() : null),
     [physicsDebugEnabled],
+  );
+  const diceMaterial = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: appearance.bodyColor,
+        map: ivoryTextures.map,
+        roughness: appearance.roughness,
+        roughnessMap: ivoryTextures.roughnessMap,
+        normalMap: ivoryTextures.normalMap,
+        normalScale: new THREE.Vector2(
+          renderConfig.materials.dice.normalScale,
+          renderConfig.materials.dice.normalScale,
+        ),
+        metalness: 0,
+        clearcoat: appearance.clearcoat,
+        clearcoatRoughness: appearance.clearcoatRoughness,
+        clearcoatNormalMap: ivoryTextures.normalMap,
+        clearcoatNormalScale: new THREE.Vector2(
+          renderConfig.materials.dice.clearcoatNormalScale,
+          renderConfig.materials.dice.clearcoatNormalScale,
+        ),
+        ior: renderConfig.materials.dice.ior,
+        specularIntensity: renderConfig.materials.dice.specularIntensity,
+        sheen: 0,
+      }),
+    [appearance],
+  );
+  const pipMaterial = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: appearance.pipColor,
+        roughness: renderConfig.materials.pips.roughness,
+        metalness: 0,
+        clearcoat: renderConfig.materials.pips.clearcoat,
+        clearcoatRoughness: renderConfig.materials.pips.clearcoatRoughness,
+      }),
+    [appearance.pipColor],
+  );
+
+  useEffect(
+    () => () => {
+      diceMaterial.dispose();
+      pipMaterial.dispose();
+    },
+    [diceMaterial, pipMaterial],
   );
 
   const publishPhysicsDebugSnapshot = useCallback(
@@ -338,14 +359,14 @@ export function Dice({
     const body = bodyRef.current;
     if (!body) return;
 
-    body.setTranslation(INITIAL_POSITION, true);
-    body.setRotation(INITIAL_ROTATION, true);
+    body.setTranslation(initialPositionVector, true);
+    body.setRotation(initialRotationQuaternion, true);
     body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     detachDragJoint();
-    targetPosition.current.copy(INITIAL_POSITION);
-    anchorRef.current?.setTranslation(INITIAL_POSITION, true);
-    trackedPosition?.current.copy(INITIAL_POSITION);
+    targetPosition.current.copy(initialPositionVector);
+    anchorRef.current?.setTranslation(initialPositionVector, true);
+    trackedPosition?.current.copy(initialPositionVector);
     activePointerId.current = null;
     dragTargetDirtyRef.current = false;
     if (isDraggingRef) {
@@ -363,6 +384,8 @@ export function Dice({
   }, [
     detachDragJoint,
     invalidate,
+    initialPositionVector,
+    initialRotationQuaternion,
     isDraggingRef,
     onDragChange,
     physicsDebugStore,
@@ -652,67 +675,43 @@ export function Dice({
   }, [gl.domElement, isDragging]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const blockedTarget =
-        event.target instanceof Element &&
-        event.target.closest(SPACE_THROW_BLOCKED_TARGET_SELECTOR) !== null;
-      const action = getSpaceThrowKeyAction({
-        blockedTarget,
-        code: event.code,
-        defaultPrevented: event.defaultPrevented,
-        repeat: event.repeat,
-      });
+    if (handledKeyboardThrowKey.current === keyboardThrowKey) return;
+    handledKeyboardThrowKey.current = keyboardThrowKey;
 
-      if (action === "ignore") return;
-      event.preventDefault();
+    if (activePointerId.current !== null || hasActiveThrow.current) return;
 
-      if (
-        action !== "throw" ||
-        activePointerId.current !== null ||
-        hasActiveThrow.current
-      ) {
-        return;
-      }
+    const body = bodyRef.current;
+    if (!body) return;
 
-      const body = bodyRef.current;
-      if (!body) return;
+    body.recomputeMassPropertiesFromColliders();
+    const forwardAxis = camera.getWorldDirection(new THREE.Vector3());
+    const rightAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const { pointVelocity, wristTorqueImpulse } = getKeyboardThrowVectors({
+      forwardAxis,
+      rightAxis,
+    });
+    const localKeyboardPoint = getLocalPointFromWorldOffset(
+      {
+        x: physicsConfig.throw.keyboard.worldImpulseOffset[0],
+        y: physicsConfig.throw.keyboard.worldImpulseOffset[1],
+        z: physicsConfig.throw.keyboard.worldImpulseOffset[2],
+      },
+      body.rotation(),
+    );
+    const keyboardPoint = new THREE.Vector3(
+      localKeyboardPoint.x,
+      localKeyboardPoint.y,
+      localKeyboardPoint.z,
+    );
 
-      body.recomputeMassPropertiesFromColliders();
-      const forwardAxis = camera.getWorldDirection(new THREE.Vector3());
-      const rightAxis = new THREE.Vector3().setFromMatrixColumn(
-        camera.matrixWorld,
-        0,
-      );
-      const { pointVelocity, wristTorqueImpulse } = getKeyboardThrowVectors({
-        forwardAxis,
-        rightAxis,
-      });
-      const localKeyboardPoint = getLocalPointFromWorldOffset(
-        {
-          x: physicsConfig.throw.keyboard.worldImpulseOffset[0],
-          y: physicsConfig.throw.keyboard.worldImpulseOffset[1],
-          z: physicsConfig.throw.keyboard.worldImpulseOffset[2],
-        },
-        body.rotation(),
-      );
-      const keyboardPoint = new THREE.Vector3(
-        localKeyboardPoint.x,
-        localKeyboardPoint.y,
-        localKeyboardPoint.z,
-      );
-
-      dragId.current += 1;
-      commitThrow(
-        keyboardPoint,
-        pointVelocity,
-        wristTorqueImpulse,
-        physicsConfig.throw.keyboard,
-      );
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [camera, commitThrow]);
+    dragId.current += 1;
+    commitThrow(
+      keyboardPoint,
+      pointVelocity,
+      wristTorqueImpulse,
+      physicsConfig.throw.keyboard,
+    );
+  }, [camera, commitThrow, keyboardThrowKey]);
 
   useEffect(() => {
     window.addEventListener("pointermove", handleWindowPointerMove);
@@ -822,7 +821,7 @@ export function Dice({
         ref={anchorRef}
         type="kinematicPosition"
         colliders={false}
-        position={INITIAL_POSITION.toArray()}
+        position={initialPosition}
       />
       {dragState ? (
         <DragJoint
@@ -846,8 +845,8 @@ export function Dice({
         restitution={physicsProfile.dice.restitution}
         friction={physicsProfile.dice.friction}
         softCcdPrediction={physicsSimulationConfig.softCcdPrediction}
-        position={INITIAL_POSITION.toArray()}
-        rotation={physicsWorldConfig.diceInitialRotationEuler}
+        position={initialPosition}
+        rotation={initialRotation}
       >
         <RoundCuboidCollider
           args={[

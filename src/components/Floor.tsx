@@ -5,9 +5,11 @@ import * as THREE from "three";
 import { PhysicsProfile, physicsWorldConfig } from "../physics/config";
 import { renderConfig } from "../render/config";
 import { createFloorPbrTextures } from "../render/floorTexture";
+import { SurfaceTheme } from "../settings/config";
 
 type FloorProps = {
   physicsProfile: PhysicsProfile;
+  surface: SurfaceTheme;
 };
 
 const FLOOR_NORMAL_SCALE = new THREE.Vector2(
@@ -15,9 +17,13 @@ const FLOOR_NORMAL_SCALE = new THREE.Vector2(
   renderConfig.materials.floor.normalScale,
 );
 
-export function Floor({ physicsProfile }: FloorProps) {
-  const floor = physicsProfile.floor;
-  const size = physicsWorldConfig.openWorldHalfExtent * 2;
+type FloorSurfaceProps = {
+  repeat: number;
+  size: number;
+  surface: SurfaceTheme;
+};
+
+export function FloorSurface({ repeat, size, surface }: FloorSurfaceProps) {
   const gl = useThree((state) => state.gl);
   const floorTextures = useMemo(
     () =>
@@ -33,10 +39,10 @@ export function Floor({ physicsProfile }: FloorProps) {
         },
         {
           anisotropy: Math.min(gl.capabilities.getMaxAnisotropy(), 4),
-          repeat: renderConfig.floorTexture.repeat,
+          repeat,
         },
       ),
-    [gl],
+    [gl, repeat],
   );
 
   useEffect(
@@ -47,6 +53,26 @@ export function Floor({ physicsProfile }: FloorProps) {
     },
     [floorTextures],
   );
+
+  return (
+    <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      <planeGeometry args={[size, size]} />
+      <meshStandardMaterial
+        color={surface.floor}
+        map={floorTextures.map}
+        normalMap={floorTextures.normalMap}
+        normalScale={FLOOR_NORMAL_SCALE}
+        roughness={renderConfig.materials.floor.roughness}
+        roughnessMap={floorTextures.roughnessMap}
+        metalness={0}
+      />
+    </mesh>
+  );
+}
+
+export function Floor({ physicsProfile, surface }: FloorProps) {
+  const floor = physicsProfile.floor;
+  const size = physicsWorldConfig.openWorldHalfExtent * 2;
 
   return (
     <RigidBody
@@ -65,18 +91,11 @@ export function Floor({ physicsProfile }: FloorProps) {
         restitution={floor.restitution}
         friction={floor.friction}
       />
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[size, size]} />
-        <meshStandardMaterial
-          color={renderConfig.palette.floor}
-          map={floorTextures.map}
-          normalMap={floorTextures.normalMap}
-          normalScale={FLOOR_NORMAL_SCALE}
-          roughness={renderConfig.materials.floor.roughness}
-          roughnessMap={floorTextures.roughnessMap}
-          metalness={0}
-        />
-      </mesh>
+      <FloorSurface
+        repeat={renderConfig.floorTexture.repeat}
+        size={size}
+        surface={surface}
+      />
     </RigidBody>
   );
 }

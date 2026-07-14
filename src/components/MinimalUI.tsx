@@ -22,6 +22,7 @@ type MinimalUIProps = {
   onPhysicsProfileChange: (profileId: PhysicsProfileId) => void;
   onReset: () => void;
   onSettingsChange: (patch: Partial<Omit<AppSettings, "version">>) => void;
+  onSettingsVisibilityChange: () => void;
 };
 
 export function MinimalUI({
@@ -33,6 +34,7 @@ export function MinimalUI({
   onPhysicsProfileChange,
   onReset,
   onSettingsChange,
+  onSettingsVisibilityChange,
 }: MinimalUIProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const results = faces.map((face, index) =>
@@ -58,21 +60,24 @@ export function MinimalUI({
         <button
           aria-controls="settings-panel"
           aria-expanded={settingsOpen}
-          aria-label="Reglages"
+          aria-label="Réglages"
           className="settings-button"
-          onClick={() => setSettingsOpen((open) => !open)}
+          onClick={() => {
+            setSettingsOpen((open) => !open);
+            onSettingsVisibilityChange();
+          }}
           type="button"
         >
           <SlidersHorizontal aria-hidden="true" size={17} strokeWidth={1.8} />
         </button>
         {settingsOpen ? (
           <section
-            aria-label="Reglages de la scene"
+            aria-label="Réglages de la scène"
             className="settings-panel"
             id="settings-panel"
           >
             <fieldset className="setting-group">
-              <legend>De</legend>
+              <legend>Dé</legend>
               <div className="swatch-options">
                 {diceAppearanceOptions.map((appearance) => (
                   <button
@@ -130,7 +135,7 @@ export function MinimalUI({
                 {diceCountOptions.map((count) => (
                   <button
                     key={count}
-                    aria-label={`${count} de${count > 1 ? "s" : ""}`}
+                    aria-label={`${count} dé${count > 1 ? "s" : ""}`}
                     aria-pressed={settings.diceCount === count}
                     onClick={() => onSettingsChange({ diceCount: count })}
                     type="button"
@@ -161,7 +166,7 @@ export function MinimalUI({
           ))}
         </div>
       ) : null}
-      <p className="help-text">Glissez puis relachez, ou appuyez sur Espace</p>
+      <p className="help-text">Glissez puis relâchez, ou appuyez sur Espace</p>
     </div>
   );
 }

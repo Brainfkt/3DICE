@@ -20,6 +20,7 @@ import {
 import { Dice } from "./Dice";
 import { Floor } from "./Floor";
 import {
+  getDiceInitialTransforms,
   PhysicsProfile,
   physicsSimulationConfig,
   physicsWorldConfig,
@@ -35,18 +36,36 @@ import {
   LightSourceConfig,
   setLightPosition,
 } from "../render/lighting";
+import { BoundedWorld } from "./worlds/BoundedWorld";
+import {
+  DiceAppearance,
+  DiceCount,
+  SurfaceTheme,
+  WorldType,
+} from "../settings/config";
+import {
+  getSpaceThrowKeyAction,
+  SPACE_THROW_BLOCKED_TARGET_SELECTOR,
+} from "../input/keyboardThrow";
 
 type SceneProps = {
+  diceAppearance: DiceAppearance;
+  diceCount: DiceCount;
   physicsProfile: PhysicsProfile;
   resetKey: number;
-  onThrowStart: () => void;
-  onSettle: (face: number) => void;
+  surface: SurfaceTheme;
+  uiRevision: number;
+  worldType: WorldType;
+  onThrowStart: (diceIndex: number) => void;
+  onSettle: (diceIndex: number, face: number) => void;
 };
 
 type SceneActivity = {
   active: boolean;
   epoch: string;
 };
+
+type DiceTransform = ReturnType<typeof getDiceInitialTransforms>[number];
 
 const BASE_CAMERA_POSITION = new THREE.Vector3(
   ...renderConfig.camera.position,
@@ -58,6 +77,8 @@ const MAX_CAMERA_ZOOM = 2.4;
 const AUTO_ZOOM_MAX = 2.15;
 const AUTO_ZOOM_START_DISTANCE = 1.45;
 const AUTO_ZOOM_PER_UNIT = 0.065;
+const GROUP_ZOOM_START_RADIUS = 1.15;
+const GROUP_ZOOM_PER_UNIT = 0.17;
 const CAMERA_ZOOM_SPEED = 5.8;
 const CAMERA_LOOK_SPEED = 10.5;
 const CAMERA_CATCHUP_PER_UNIT = 1.05;
@@ -117,13 +138,29 @@ function ActiveFrameDriver({ active }: { active: boolean }) {
   return null;
 }
 
+function RenderInvalidation({ revision }: { revision: number }) {
+  const invalidate = useThree((state) => state.invalidate);
+
+  useLayoutEffect(() => {
+    invalidate();
+  }, [invalidate, revision]);
+
+  return null;
+}
+
 type CameraRigProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
+  diceSpreadRef: MutableRefObject<number>;
   isDiceDraggingRef: MutableRefObject<boolean>;
   resetKey: number;
 };
 
-function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigProps) {
+function CameraRig({
+  dicePositionRef,
+  diceSpreadRef,
+  isDiceDraggingRef,
+  resetKey,
+}: CameraRigProps) {
   const { camera, gl, invalidate } = useThree();
   const lookAtRef = useRef(BASE_LOOK_AT.clone());
   const desiredPosition = useMemo(() => new THREE.Vector3(), []);
@@ -243,11 +280,19 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
     desiredLookAt.set(dicePosition.x, BASE_LOOK_AT.y + diceHeightLift, dicePosition.z);
 
     const lookAtLag = lookAtRef.current.distanceTo(desiredLookAt);
-    const autoZoom = clampNumber(
+    const followAutoZoom = clampNumber(
       1 + Math.max(lookAtLag - AUTO_ZOOM_START_DISTANCE, 0) * AUTO_ZOOM_PER_UNIT,
       1,
       AUTO_ZOOM_MAX,
     );
+    const groupAutoZoom = clampNumber(
+      1 +
+        Math.max(diceSpreadRef.current - GROUP_ZOOM_START_RADIUS, 0) *
+          GROUP_ZOOM_PER_UNIT,
+      1,
+      AUTO_ZOOM_MAX,
+    );
+    const autoZoom = Math.max(followAutoZoom, groupAutoZoom);
 
     const desiredZoom = Math.max(zoomTarget.current, autoZoom);
 
@@ -454,10 +499,12 @@ function ShadowMapController({
 function FollowContactShadows({
   dicePositionRef,
   dynamic,
+  scale,
   staticKey,
 }: {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
   dynamic: boolean;
+  scale: number;
   staticKey: number;
 }) {
   const shadowRef = useRef<THREE.Group>(null);
@@ -484,9 +531,94 @@ function FollowContactShadows({
       opacity={renderConfig.shadows.contactOpacity}
       position={[0, renderConfig.shadows.floorY, 0]}
       resolution={renderConfig.shadows.contactResolution}
-      scale={renderConfig.shadows.contactScale}
+      scale={scale}
       smooth
       visible={!dynamic}
+    />
+  );
+}
+
+function DiceCenterTracker({
+  centerRef,
+  positionRefs,
+  spreadRef,
+}: {
+  centerRef: MutableRefObject<THREE.Vector3>;
+  positionRefs: readonly MutableRefObject<THREE.Vector3>[];
+  spreadRef: MutableRefObject<number>;
+}) {
+  useFrame(() => {
+    centerRef.current.set(0, 0, 0);
+
+    for (const positionRef of positionRefs) {
+      centerRef.current.add(positionRef.current);
+    }
+
+    centerRef.current.multiplyScalar(1 / positionRefs.length);
+    spreadRef.current = 0;
+
+    for (const positionRef of positionRefs) {
+      spreadRef.current = Math.max(
+        spreadRef.current,
+        centerRef.current.distanceTo(positionRef.current),
+      );
+    }
+  }, physicsSimulationConfig.updatePriority + 1);
+
+  return null;
+}
+
+function DiceInstance({
+  appearance,
+  diceIndex,
+  keyboardThrowKey,
+  onDragChange,
+  onSettle,
+  onThrowStart,
+  physicsDebugEnabled,
+  physicsProfile,
+  positionRef,
+  resetKey,
+  transform,
+}: {
+  appearance: DiceAppearance;
+  diceIndex: number;
+  keyboardThrowKey: number;
+  onDragChange: (diceIndex: number, dragging: boolean) => void;
+  onSettle: (diceIndex: number, face: number) => void;
+  onThrowStart: (diceIndex: number) => void;
+  physicsDebugEnabled: boolean;
+  physicsProfile: PhysicsProfile;
+  positionRef: MutableRefObject<THREE.Vector3>;
+  resetKey: number;
+  transform: DiceTransform;
+}) {
+  const handleDragChange = useCallback(
+    (dragging: boolean) => onDragChange(diceIndex, dragging),
+    [diceIndex, onDragChange],
+  );
+  const handleSettle = useCallback(
+    (face: number) => onSettle(diceIndex, face),
+    [diceIndex, onSettle],
+  );
+  const handleThrowStart = useCallback(
+    () => onThrowStart(diceIndex),
+    [diceIndex, onThrowStart],
+  );
+
+  return (
+    <Dice
+      appearance={appearance}
+      initialPosition={transform.position}
+      initialRotation={transform.rotation}
+      keyboardThrowKey={keyboardThrowKey}
+      physicsDebugEnabled={physicsDebugEnabled}
+      physicsProfile={physicsProfile}
+      resetKey={resetKey}
+      onDragChange={handleDragChange}
+      onThrowStart={handleThrowStart}
+      onSettle={handleSettle}
+      trackedPosition={positionRef}
     />
   );
 }
@@ -560,12 +692,35 @@ function RenderMetrics() {
   return null;
 }
 
-export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: SceneProps) {
-  const dicePositionRef = useRef(
-    new THREE.Vector3(...physicsWorldConfig.diceInitialPosition),
+export function Scene({
+  diceAppearance,
+  diceCount,
+  physicsProfile,
+  resetKey,
+  surface,
+  uiRevision,
+  worldType,
+  onThrowStart,
+  onSettle,
+}: SceneProps) {
+  const diceTransforms = useMemo(
+    () => getDiceInitialTransforms(diceCount),
+    [diceCount],
   );
-  const isDiceDraggingRef = useRef(false);
-  const simulationEpoch = `${physicsProfile.id}:${resetKey}`;
+  const dicePositionRefs = useMemo(
+    () =>
+      diceTransforms.map((transform) => ({
+        current: new THREE.Vector3(...transform.position),
+      })),
+    [diceTransforms],
+  );
+  const diceCenterRef = useRef(new THREE.Vector3());
+  const diceSpreadRef = useRef(0);
+  const isAnyDiceDraggingRef = useRef(false);
+  const activeDiceIdsRef = useRef(new Set<number>());
+  const draggingDiceIdsRef = useRef(new Set<number>());
+  const [keyboardThrowKey, setKeyboardThrowKey] = useState(0);
+  const simulationEpoch = `${physicsProfile.id}:${worldType}:${diceCount}:${resetKey}`;
   const [sceneActivity, setSceneActivity] = useState<SceneActivity>({
     active: false,
     epoch: simulationEpoch,
@@ -590,19 +745,85 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
     setStaticShadowKey((value) => value + 1);
   }, [setIsSceneActive]);
 
+  useLayoutEffect(() => {
+    activeDiceIdsRef.current.clear();
+    draggingDiceIdsRef.current.clear();
+    isAnyDiceDraggingRef.current = false;
+    diceCenterRef.current.set(0, 0, 0);
+
+    for (const positionRef of dicePositionRefs) {
+      diceCenterRef.current.add(positionRef.current);
+    }
+
+    diceCenterRef.current.multiplyScalar(1 / dicePositionRefs.length);
+    diceSpreadRef.current = 0;
+
+    for (const positionRef of dicePositionRefs) {
+      diceSpreadRef.current = Math.max(
+        diceSpreadRef.current,
+        diceCenterRef.current.distanceTo(positionRef.current),
+      );
+    }
+  }, [dicePositionRefs, simulationEpoch]);
+
   useEffect(() => {
     refreshStaticShadow();
   }, [refreshStaticShadow, resetKey]);
 
-  const handleThrowStart = useCallback(() => {
+  const handleDiceDragChange = useCallback((diceIndex: number, dragging: boolean) => {
+    if (dragging) {
+      draggingDiceIdsRef.current.add(diceIndex);
+      activeDiceIdsRef.current.add(diceIndex);
+      setIsSceneActive(true);
+    } else {
+      draggingDiceIdsRef.current.delete(diceIndex);
+    }
+
+    isAnyDiceDraggingRef.current = draggingDiceIdsRef.current.size > 0;
+  }, [setIsSceneActive]);
+
+  const handleThrowStart = useCallback((diceIndex: number) => {
+    activeDiceIdsRef.current.add(diceIndex);
     setIsSceneActive(true);
-    onThrowStart();
+    onThrowStart(diceIndex);
   }, [onThrowStart, setIsSceneActive]);
 
-  const handleSettle = useCallback((face: number) => {
-    onSettle(face);
-    refreshStaticShadow();
+  const handleSettle = useCallback((diceIndex: number, face: number) => {
+    activeDiceIdsRef.current.delete(diceIndex);
+    onSettle(diceIndex, face);
+
+    if (activeDiceIdsRef.current.size === 0) {
+      refreshStaticShadow();
+    }
   }, [onSettle, refreshStaticShadow]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const blockedTarget =
+        event.target instanceof Element &&
+        event.target.closest(SPACE_THROW_BLOCKED_TARGET_SELECTOR) !== null;
+      const action = getSpaceThrowKeyAction({
+        blockedTarget,
+        code: event.code,
+        defaultPrevented: event.defaultPrevented,
+        repeat: event.repeat,
+      });
+
+      if (action === "ignore") return;
+      event.preventDefault();
+
+      if (action !== "throw" || activeDiceIdsRef.current.size > 0) return;
+
+      activeDiceIdsRef.current = new Set(
+        Array.from({ length: diceCount }, (_, index) => index),
+      );
+      setIsSceneActive(true);
+      setKeyboardThrowKey((value) => value + 1);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [diceCount, setIsSceneActive]);
 
   return (
     <Canvas
@@ -624,14 +845,21 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         gl.shadowMap.type = THREE.PCFShadowMap;
       }}
     >
-      <color attach="background" args={[renderConfig.palette.background]} />
-      <fog attach="fog" args={[renderConfig.palette.fog, 24, 145]} />
+      <color attach="background" args={[surface.background]} />
+      <fog attach="fog" args={[surface.fog, 24, 145]} />
       <PerspectiveCamera makeDefault position={BASE_CAMERA_POSITION.toArray()} fov={46} near={0.1} far={1200} />
       <ActiveFrameDriver active={isSceneActive} />
+      <RenderInvalidation revision={uiRevision} />
       <CameraRig
-        dicePositionRef={dicePositionRef}
-        isDiceDraggingRef={isDiceDraggingRef}
+        dicePositionRef={diceCenterRef}
+        diceSpreadRef={diceSpreadRef}
+        isDiceDraggingRef={isAnyDiceDraggingRef}
         resetKey={resetKey}
+      />
+      <DiceCenterTracker
+        centerRef={diceCenterRef}
+        positionRefs={dicePositionRefs}
+        spreadRef={diceSpreadRef}
       />
       {renderMetricsEnabled ? <RenderMetrics /> : null}
       <ShadowMapController dynamic={isSceneActive} staticKey={staticShadowKey} />
@@ -641,10 +869,10 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         groundColor={renderConfig.lighting.hemisphereGroundColor}
         intensity={renderConfig.lighting.hemisphereIntensity}
       />
-      <StudioLights dicePositionRef={dicePositionRef} />
+      <StudioLights dicePositionRef={diceCenterRef} />
 
       <Physics
-        key={physicsProfile.id}
+        key={`${physicsProfile.id}:${worldType}:${diceCount}`}
         gravity={physicsProfile.gravity}
         maxCcdSubsteps={physicsSimulationConfig.maxCcdSubsteps}
         paused={!isSceneActive}
@@ -652,22 +880,35 @@ export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: Scen
         updateLoop="follow"
         updatePriority={physicsSimulationConfig.updatePriority}
       >
-        <Dice
-          key={resetKey}
-          physicsDebugEnabled={physicsDebugEnabled}
-          physicsProfile={physicsProfile}
-          resetKey={resetKey}
-          onDragChange={setIsSceneActive}
-          onThrowStart={handleThrowStart}
-          onSettle={handleSettle}
-          trackedPosition={dicePositionRef}
-          isDraggingRef={isDiceDraggingRef}
-        />
-        <Floor physicsProfile={physicsProfile} />
+        {diceTransforms.map((transform, diceIndex) => (
+          <DiceInstance
+            key={`${resetKey}:${diceIndex}`}
+            appearance={diceAppearance}
+            diceIndex={diceIndex}
+            keyboardThrowKey={keyboardThrowKey}
+            physicsDebugEnabled={physicsDebugEnabled && diceIndex === 0}
+            physicsProfile={physicsProfile}
+            positionRef={dicePositionRefs[diceIndex]}
+            resetKey={resetKey}
+            transform={transform}
+            onDragChange={handleDiceDragChange}
+            onThrowStart={handleThrowStart}
+            onSettle={handleSettle}
+          />
+        ))}
+        {worldType === "bounded" ? (
+          <BoundedWorld physicsProfile={physicsProfile} surface={surface} />
+        ) : (
+          <Floor physicsProfile={physicsProfile} surface={surface} />
+        )}
       </Physics>
       <FollowContactShadows
-        dicePositionRef={dicePositionRef}
+        dicePositionRef={diceCenterRef}
         dynamic={isSceneActive}
+        scale={Math.min(
+          renderConfig.shadows.contactScale + (diceCount - 1) * 1.05,
+          5,
+        )}
         staticKey={staticShadowKey}
       />
       <StudioEnvironment />
