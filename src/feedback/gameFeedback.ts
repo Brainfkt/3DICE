@@ -129,7 +129,7 @@ export function playGameSound({
 
   if (kind === "impact") {
     const now = performance.now();
-    if (now - lastImpactAt < 48) return;
+    if (now - lastImpactAt < 76) return;
     lastImpactAt = now;
     playTone(audioContext, 118 * pitch, 0.075, 0.018 + clampedStrength * 0.045, "triangle");
     playNoise(audioContext, 420 * pitch, 0.055, 0.012 + clampedStrength * 0.026);
@@ -169,7 +169,7 @@ export function triggerHaptic({
 
   const now = performance.now();
   if (kind === "impact") {
-    if (now - lastHapticAt < 90 || strength < 0.32) return;
+    if (now - lastHapticAt < 240 || strength < 0.5) return;
     lastHapticAt = now;
     navigator.vibrate(strength > 0.72 ? 18 : 10);
     return;
@@ -178,4 +178,3 @@ export function triggerHaptic({
   lastHapticAt = now;
   navigator.vibrate([16, 34, 22]);
 }
-
