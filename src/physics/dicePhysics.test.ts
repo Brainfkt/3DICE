@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { physicsConfig } from "./config";
 import {
+  appendPointerSample,
   clampDragTargetToReach,
   createSettleState,
   getDragTargetFromPointerDelta,
+  getKeyboardThrowVectors,
+  getLocalPointFromWorldOffset,
+  getLimitedBodyMotion,
   getNextSettleState,
   getPointVelocity,
+  getPointerGestureVelocity,
   getReleaseImpulse,
   getThrowVectors,
 } from "./dicePhysics";
@@ -169,6 +174,185 @@ describe("getThrowVectors", () => {
   });
 });
 
+describe("getKeyboardThrowVectors", () => {
+  it("creates a finite, strong camera-relative throw", () => {
+    const randomValues = [0.5, 0.5, 0.75];
+    const result = getKeyboardThrowVectors({
+      forwardAxis: { x: 0, y: -0.8, z: -4 },
+      rightAxis: { x: 3, y: 0.2, z: 0 },
+      random: () => randomValues.shift() ?? 0.5,
+    });
+
+    expect(result.pointVelocity.x).toBeCloseTo(0, 6);
+    expect(result.pointVelocity.y).toBeCloseTo(
+      physicsConfig.throw.keyboard.verticalVelocity,
+      6,
+    );
+    expect(result.pointVelocity.z).toBeCloseTo(
+      -physicsConfig.throw.keyboard.forwardVelocity,
+      6,
+    );
+    expect(
+      Object.values(result.pointVelocity).every(Number.isFinite),
+    ).toBe(true);
+    expect(
+      Object.values(result.wristTorqueImpulse).every(Number.isFinite),
+    ).toBe(true);
+  });
+
+  it("keeps power and lateral variation inside the configured range", () => {
+    const weak = getKeyboardThrowVectors({
+      forwardAxis: { x: 0, y: 0, z: -1 },
+      rightAxis: { x: 1, y: 0, z: 0 },
+      random: () => 0,
+    });
+    const strong = getKeyboardThrowVectors({
+      forwardAxis: { x: 0, y: 0, z: -1 },
+      rightAxis: { x: 1, y: 0, z: 0 },
+      random: () => 1,
+    });
+    const weakSpeed = Math.hypot(
+      weak.pointVelocity.x,
+      weak.pointVelocity.y,
+      weak.pointVelocity.z,
+    );
+    const strongSpeed = Math.hypot(
+      strong.pointVelocity.x,
+      strong.pointVelocity.y,
+      strong.pointVelocity.z,
+    );
+
+    expect(weak.pointVelocity.x).toBeLessThan(0);
+    expect(strong.pointVelocity.x).toBeGreaterThan(0);
+    expect(weak.pointVelocity.z).toBeLessThan(0);
+    expect(strong.pointVelocity.z).toBeLessThan(0);
+    expect(weak.pointVelocity.y).toBeGreaterThan(
+      Math.hypot(weak.pointVelocity.x, weak.pointVelocity.z),
+    );
+    expect(strongSpeed).toBeGreaterThan(weakSpeed);
+    expect(strongSpeed).toBeLessThan(
+      physicsConfig.throw.keyboard.maxPointSpeedDelta,
+    );
+  });
+
+  it("falls back to stable horizontal axes when inputs are degenerate", () => {
+    const result = getKeyboardThrowVectors({
+      forwardAxis: { x: 0, y: 1, z: 0 },
+      rightAxis: { x: 0, y: 1, z: 0 },
+      random: () => 0.5,
+    });
+
+    expect(Object.values(result.pointVelocity).every(Number.isFinite)).toBe(true);
+    expect(horizontalLength(result.pointVelocity)).toBeCloseTo(
+      physicsConfig.throw.keyboard.forwardVelocity,
+      5,
+    );
+  });
+
+  it("always applies tumble torque around the natural forward-roll axis", () => {
+    const forward = new THREE.Vector3(1, 0, -2).normalize();
+    const result = getKeyboardThrowVectors({
+      forwardAxis: forward,
+      rightAxis: new THREE.Vector3(2, 0, 1),
+      random: () => 0.5,
+    });
+    const forwardRollAxis = new THREE.Vector3(0, 1, 0)
+      .cross(forward)
+      .normalize();
+    const torque = new THREE.Vector3(
+      result.wristTorqueImpulse.x,
+      result.wristTorqueImpulse.y,
+      result.wristTorqueImpulse.z,
+    );
+
+    expect(torque.dot(forwardRollAxis)).toBeGreaterThan(0);
+  });
+});
+
+describe("getLocalPointFromWorldOffset", () => {
+  it("keeps the keyboard impulse above the body after any settled rotation", () => {
+    const bodyRotation = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0.74, -1.12, 0.39),
+    );
+    const worldOffset = new THREE.Vector3(
+      ...physicsConfig.throw.keyboard.worldImpulseOffset,
+    );
+    const localPoint = getLocalPointFromWorldOffset(worldOffset, bodyRotation);
+    const reconstructedWorldOffset = new THREE.Vector3(
+      localPoint.x,
+      localPoint.y,
+      localPoint.z,
+    ).applyQuaternion(bodyRotation);
+
+    expect(reconstructedWorldOffset.x).toBeCloseTo(0, 6);
+    expect(reconstructedWorldOffset.y).toBeCloseTo(
+      physicsConfig.throw.keyboard.worldImpulseOffset[1],
+      6,
+    );
+    expect(reconstructedWorldOffset.z).toBeCloseTo(0, 6);
+  });
+});
+
+describe("pointer velocity sampling", () => {
+  it("keeps a time-based history instead of only the last six events", () => {
+    let samples: ReturnType<typeof sample>[] = [];
+
+    for (let time = 0; time <= 120; time += 5) {
+      samples = appendPointerSample(
+        samples,
+        sample(new THREE.Vector3(time / 100, 0, 0), time),
+      );
+    }
+
+    expect(samples.length).toBeGreaterThan(6);
+    expect(samples[0].time).toBe(0);
+    expect(samples[samples.length - 1]?.time).toBe(120);
+  });
+
+  it("evicts samples outside the history window and respects the safety cap", () => {
+    let samples: ReturnType<typeof sample>[] = [];
+
+    for (let time = 0; time <= 300; time += 10) {
+      samples = appendPointerSample(
+        samples,
+        sample(new THREE.Vector3(time, 0, 0), time),
+        50,
+        4,
+      );
+    }
+
+    expect(samples).toHaveLength(4);
+    expect(samples.map((entry) => entry.time)).toEqual([270, 280, 290, 300]);
+  });
+
+  it("estimates the same gesture across different pointer polling rates", () => {
+    const dense = Array.from({ length: 21 }, (_, index) =>
+      sample(new THREE.Vector3(index * 0.01, index * 0.005, 0), index * 5),
+    );
+    const sparse = Array.from({ length: 5 }, (_, index) =>
+      sample(new THREE.Vector3(index * 0.05, index * 0.025, 0), index * 25),
+    );
+
+    const denseVelocity = getPointerGestureVelocity(dense);
+    const sparseVelocity = getPointerGestureVelocity(sparse);
+
+    expect(denseVelocity.x).toBeCloseTo(2, 5);
+    expect(denseVelocity.y).toBeCloseTo(1, 5);
+    expect(sparseVelocity.x).toBeCloseTo(denseVelocity.x, 5);
+    expect(sparseVelocity.y).toBeCloseTo(denseVelocity.y, 5);
+  });
+
+  it("keeps a sub-frame down/up gesture finite and powerful", () => {
+    const velocity = getPointerGestureVelocity([
+      sample(new THREE.Vector3(0, 0, 0), 100),
+      sample(new THREE.Vector3(0.16, 0.08, -0.12), 102),
+    ]);
+
+    expect(Object.values(velocity).every(Number.isFinite)).toBe(true);
+    expect(Math.hypot(velocity.x, velocity.y, velocity.z)).toBeGreaterThan(10);
+  });
+});
+
 describe("getPointVelocity", () => {
   it("adds angular velocity around the body center", () => {
     const result = getPointVelocity(
@@ -187,6 +371,15 @@ describe("getReleaseImpulse", () => {
     const result = getReleaseImpulse(
       { x: 1, y: 2, z: 3 },
       { x: 1, y: 2, z: 3 },
+    );
+
+    expect(result).toEqual({ x: 0, y: 0, z: 0 });
+  });
+
+  it("never brakes momentum that is already faster in the gesture direction", () => {
+    const result = getReleaseImpulse(
+      { x: 2, y: 1, z: 0 },
+      { x: 8, y: 4, z: 0 },
     );
 
     expect(result).toEqual({ x: 0, y: 0, z: 0 });
@@ -216,6 +409,75 @@ describe("getReleaseImpulse", () => {
     );
 
     expect(heavierResult.x).toBeCloseTo(lightResult.x * 2, 5);
+  });
+
+  it("allows the keyboard throw to use its stronger dedicated impulse limits", () => {
+    const target = {
+      x: physicsConfig.throw.keyboard.forwardVelocity,
+      y: physicsConfig.throw.keyboard.verticalVelocity,
+      z: 0,
+    };
+    const current = { x: 0, y: 0, z: 0 };
+    const pointerImpulse = getReleaseImpulse(target, current, 0.5);
+    const keyboardImpulse = getReleaseImpulse(
+      target,
+      current,
+      0.5,
+      physicsConfig.throw.keyboard,
+    );
+    const pointerMagnitude = Math.hypot(
+      pointerImpulse.x,
+      pointerImpulse.y,
+      pointerImpulse.z,
+    );
+    const keyboardMagnitude = Math.hypot(
+      keyboardImpulse.x,
+      keyboardImpulse.y,
+      keyboardImpulse.z,
+    );
+
+    expect(keyboardMagnitude).toBeGreaterThan(pointerMagnitude * 2);
+    expect(keyboardMagnitude).toBeLessThanOrEqual(
+      physicsConfig.throw.keyboard.maxPointImpulse,
+    );
+  });
+});
+
+describe("getLimitedBodyMotion", () => {
+  it("softly compresses inherited outliers while preserving their directions", () => {
+    const result = getLimitedBodyMotion(
+      { x: 30, y: 40, z: 0 },
+      { x: 0, y: -24, z: 18 },
+    );
+
+    const linearSpeed = Math.hypot(
+      result.linearVelocity.x,
+      result.linearVelocity.y,
+      result.linearVelocity.z,
+    );
+    const angularSpeed = Math.hypot(
+      result.angularVelocity.x,
+      result.angularVelocity.y,
+      result.angularVelocity.z,
+    );
+
+    expect(linearSpeed).toBeGreaterThan(physicsConfig.throw.releaseLinearSoftLimit);
+    expect(linearSpeed).toBeLessThan(physicsConfig.throw.maxReleaseLinearSpeed);
+    expect(result.linearVelocity.x / result.linearVelocity.y).toBeCloseTo(30 / 40, 6);
+    expect(angularSpeed).toBeGreaterThan(physicsConfig.throw.releaseAngularSoftLimit);
+    expect(angularSpeed).toBeLessThan(30);
+    expect(result.angularVelocity.y).toBeLessThan(0);
+    expect(result.angularVelocity.z).toBeGreaterThan(0);
+  });
+
+  it("leaves motion below both safety limits unchanged", () => {
+    expect(getLimitedBodyMotion(
+      { x: 1, y: 2, z: 3 },
+      { x: 4, y: 5, z: 6 },
+    )).toEqual({
+      linearVelocity: { x: 1, y: 2, z: 3 },
+      angularVelocity: { x: 4, y: 5, z: 6 },
+    });
   });
 });
 
