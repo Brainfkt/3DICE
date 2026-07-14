@@ -1,4 +1,8 @@
 const sharedThrow = {
+  pointerSampleHistoryMs: 160,
+  pointerSampleWindowMs: 110,
+  minPointerSampleDurationMs: 16,
+  maxPointerSamples: 192,
   velocityScale: 0.18,
   verticalLift: 0.94,
   verticalGestureScale: 0.52,
@@ -8,11 +12,29 @@ const sharedThrow = {
   maxHorizontalVelocity: 5.2,
   maxVerticalVelocity: 4.3,
   pointImpulseScale: 0.88,
-  maxPointSpeedDelta: 6.5,
-  maxPointImpulse: 3.2,
+  maxPointSpeedDelta: 11.2,
+  maxPointImpulse: 5.3,
+  releaseLinearSoftLimit: 8,
+  maxReleaseLinearSpeed: 14,
+  releaseAngularSoftLimit: 22,
+  maxReleaseAngularSpeed: 42,
   wristTorqueImpulse: 0.12,
   tumbleTorqueImpulse: 0.07,
   maxWristTorqueImpulse: 0.72,
+  keyboard: {
+    forwardVelocity: 21.6,
+    verticalVelocity: 24,
+    lateralJitterVelocity: 0.6,
+    powerJitter: 0.04,
+    worldImpulseOffset: [0, 0.23, 0] as [number, number, number],
+    pointImpulseScale: 0.88,
+    maxPointSpeedDelta: 35,
+    maxPointImpulse: 15.5,
+    releaseLinearSoftLimit: 30,
+    maxReleaseLinearSpeed: 36,
+    releaseAngularSoftLimit: 14,
+    maxReleaseAngularSpeed: 18,
+  },
 } as const;
 
 const sharedDrag = {
@@ -25,6 +47,15 @@ const sharedDrag = {
   verticalGestureScale: 0.46,
   catchLinearDamping: 0.28,
   catchAngularDamping: 0.5,
+} as const;
+
+export const physicsSimulationConfig = {
+  additionalSolverIterations: 4,
+  continuousCollisionDetection: true,
+  fixedTimeStep: 1 / 120,
+  maxCcdSubsteps: 8,
+  softCcdPrediction: 0.5,
+  updatePriority: -100,
 } as const;
 
 const sharedSettle = {
@@ -46,6 +77,7 @@ const sharedFloorBounds = {
 const sharedCollider = {
   colliderHalfExtent: 0.49,
   colliderBorderRadius: 0.06,
+  contactSkin: 0.01,
 } as const;
 
 export const physicsProfiles = {
@@ -294,19 +326,19 @@ export const physicsProfiles = {
   k: {
     id: "k",
     label: "K",
-    name: "G roule sol",
-    gravity: [0, -58, 0] as [number, number, number],
+    name: "G leger rebond",
+    gravity: [0, -54, 0] as [number, number, number],
     dice: {
-      mass: 0.5,
-      friction: 0.76,
-      restitution: 0.25,
-      linearDamping: 0.16,
-      angularDamping: 0.055,
+      mass: 0.46,
+      friction: 0.74,
+      restitution: 0.3,
+      linearDamping: 0.14,
+      angularDamping: 0.05,
       ...sharedCollider,
     },
     floor: {
-      friction: 0.72,
-      restitution: 0.19,
+      friction: 0.7,
+      restitution: 0.23,
       ...sharedFloorBounds,
     },
     throw: sharedThrow,
