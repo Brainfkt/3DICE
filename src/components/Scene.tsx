@@ -149,14 +149,12 @@ function RenderInvalidation({ revision }: { revision: number }) {
 type CameraRigProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
   diceSpreadRef: MutableRefObject<number>;
-  isDiceDraggingRef: MutableRefObject<boolean>;
   resetKey: number | string;
 };
 
 function CameraRig({
   dicePositionRef,
   diceSpreadRef,
-  isDiceDraggingRef,
   resetKey,
 }: CameraRigProps) {
   const { camera, gl, invalidate } = useThree();
@@ -268,13 +266,6 @@ function CameraRig({
         ),
         2.2,
       ) * 0.18;
-    const isDiceDragging = isDiceDraggingRef.current;
-
-    if (isDiceDragging) {
-      camera.lookAt(lookAtRef.current);
-      return;
-    }
-
     desiredLookAt.set(dicePosition.x, BASE_LOOK_AT.y + diceHeightLift, dicePosition.z);
 
     const lookAtLag = lookAtRef.current.distanceTo(desiredLookAt);
@@ -578,6 +569,7 @@ function DiceInstance({
   physicsProfile,
   positionRef,
   resetKey,
+  resetBeforeKeyboardThrow,
   transform,
 }: {
   appearance: DiceAppearance;
@@ -591,6 +583,7 @@ function DiceInstance({
   physicsProfile: PhysicsProfile;
   positionRef: MutableRefObject<THREE.Vector3>;
   resetKey: number | string;
+  resetBeforeKeyboardThrow: boolean;
   transform: DiceTransform;
 }) {
   const handleDragChange = useCallback(
@@ -613,6 +606,7 @@ function DiceInstance({
       initialPosition={transform.position}
       initialRotation={transform.rotation}
       keyboardThrowKey={keyboardThrowKey}
+      resetBeforeKeyboardThrow={resetBeforeKeyboardThrow}
       physicsDebugEnabled={physicsDebugEnabled}
       physicsProfile={physicsProfile}
       resetKey={resetKey}
@@ -716,15 +710,13 @@ export function Scene({
   );
   const diceCenterRef = useRef(new THREE.Vector3());
   const diceSpreadRef = useRef(0);
-  const isAnyDiceDraggingRef = useRef(false);
   const activeDiceIdsRef = useRef(new Set<number>());
-  const draggingDiceIdsRef = useRef(new Set<number>());
   const pendingMultiDiceRelaunchRef = useRef(false);
   const pendingMultiDiceRelaunchFrameRef = useRef<number | null>(null);
   const [keyboardThrowKey, setKeyboardThrowKey] = useState(0);
   const [multiDiceResetKey, setMultiDiceResetKey] = useState(0);
-  const diceResetKey = `${resetKey}:${multiDiceResetKey}`;
-  const simulationEpoch = `${physicsProfile.id}:${diceCount}:${diceResetKey}`;
+  const sceneResetKey = `${resetKey}:${multiDiceResetKey}`;
+  const simulationEpoch = `${physicsProfile.id}:${diceCount}:${sceneResetKey}`;
   const [sceneActivity, setSceneActivity] = useState<SceneActivity>({
     active: false,
     epoch: simulationEpoch,
@@ -751,8 +743,6 @@ export function Scene({
 
   useLayoutEffect(() => {
     activeDiceIdsRef.current.clear();
-    draggingDiceIdsRef.current.clear();
-    isAnyDiceDraggingRef.current = false;
     diceCenterRef.current.set(0, 0, 0);
 
     for (let index = 0; index < dicePositionRefs.length; index += 1) {
@@ -809,14 +799,9 @@ export function Scene({
 
   const handleDiceDragChange = useCallback((diceIndex: number, dragging: boolean) => {
     if (dragging) {
-      draggingDiceIdsRef.current.add(diceIndex);
       activeDiceIdsRef.current.add(diceIndex);
       setIsSceneActive(true);
-    } else {
-      draggingDiceIdsRef.current.delete(diceIndex);
     }
-
-    isAnyDiceDraggingRef.current = draggingDiceIdsRef.current.size > 0;
   }, [setIsSceneActive]);
 
   const handleThrowStart = useCallback((diceIndex: number) => {
@@ -863,8 +848,6 @@ export function Scene({
 
         pendingMultiDiceRelaunchRef.current = true;
         activeDiceIdsRef.current.clear();
-        draggingDiceIdsRef.current.clear();
-        isAnyDiceDraggingRef.current = false;
         setIsSceneActive(false);
         setMultiDiceResetKey((value) => value + 1);
         return;
@@ -909,8 +892,7 @@ export function Scene({
       <CameraRig
         dicePositionRef={diceCenterRef}
         diceSpreadRef={diceSpreadRef}
-        isDiceDraggingRef={isAnyDiceDraggingRef}
-        resetKey={diceResetKey}
+        resetKey={sceneResetKey}
       />
       <DiceCenterTracker
         centerRef={diceCenterRef}
@@ -938,7 +920,10 @@ export function Scene({
       >
         {diceTransforms.map((transform, diceIndex) => (
           <DiceInstance
-            key={`${diceResetKey}:${diceIndex}`}
+            // An explicit Reset remounts the body so Three and paused Rapier
+            // cannot retain different transforms. Multi-dice relaunches keep
+            // the same resetKey and still reset atomically inside Dice.
+            key={`${resetKey}:${diceIndex}`}
             appearance={diceAppearance}
             diceIndex={diceIndex}
             dragEnabled={diceCount === 1}
@@ -946,7 +931,8 @@ export function Scene({
             physicsDebugEnabled={physicsDebugEnabled && diceIndex === 0}
             physicsProfile={physicsProfile}
             positionRef={dicePositionRefs[diceIndex]}
-            resetKey={diceResetKey}
+            resetBeforeKeyboardThrow={diceCount > 1}
+            resetKey={resetKey}
             transform={transform}
             onDragChange={handleDiceDragChange}
             onThrowStart={handleThrowStart}

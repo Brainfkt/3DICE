@@ -60,6 +60,7 @@ type DiceProps = {
   initialPosition: [number, number, number];
   initialRotation: [number, number, number];
   keyboardThrowKey: number;
+  resetBeforeKeyboardThrow: boolean;
   physicsDebugEnabled?: boolean;
   physicsProfile: PhysicsProfile;
   resetKey: number | string;
@@ -141,6 +142,7 @@ export function Dice({
   initialPosition,
   initialRotation,
   keyboardThrowKey,
+  resetBeforeKeyboardThrow,
   physicsDebugEnabled = false,
   physicsProfile,
   resetKey,
@@ -684,6 +686,7 @@ export function Dice({
     if (handledKeyboardThrowKey.current === keyboardThrowKey) return;
     handledKeyboardThrowKey.current = keyboardThrowKey;
 
+    if (resetBeforeKeyboardThrow) resetDice();
     if (activePointerId.current !== null || hasActiveThrow.current) return;
 
     const body = bodyRef.current;
@@ -717,7 +720,13 @@ export function Dice({
       wristTorqueImpulse,
       physicsConfig.throw.keyboard,
     );
-  }, [camera, commitThrow, keyboardThrowKey]);
+  }, [
+    camera,
+    commitThrow,
+    keyboardThrowKey,
+    resetBeforeKeyboardThrow,
+    resetDice,
+  ]);
 
   useEffect(() => {
     window.addEventListener("pointermove", handleWindowPointerMove);
