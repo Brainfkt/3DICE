@@ -848,6 +848,9 @@ export function Dice({
         parkingAnchorRef.current.z + parkingOffset[2],
       );
       body.setTranslation(parkedWorldPosition, false);
+      if (preParkTransformRef.current) {
+        body.setRotation(preParkTransformRef.current.rotation, false);
+      }
       body.setLinvel({ x: 0, y: 0, z: 0 }, true);
       body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       trackedPosition?.current.copy(parkedWorldPosition);
