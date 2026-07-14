@@ -6,7 +6,6 @@ import {
   diceAppearanceOptions,
   diceCountOptions,
   surfaceOptions,
-  worldTypeOptions,
 } from "../settings/config";
 
 // The preset selector was a temporary calibration tool. Keep the code dormant so it
@@ -44,32 +43,50 @@ export function MinimalUI({
     results.length === 1
       ? `Face: ${results[0]}`
       : `Faces: ${results.join(" · ")}`;
+  const isMultiDice = faces.length > 1;
+  const isAnyDieRolling = rollingDice.some(Boolean);
+  const hasCompleteResult = faces.every((face) => face !== null);
+  const totalLabel = isAnyDieRolling
+    ? "…"
+    : hasCompleteResult
+      ? String(faces.reduce<number>((total, face) => total + (face ?? 0), 0))
+      : "–";
 
   return (
     <div className="ui-layer" aria-label="Dice controls">
       <div className="topbar">
         <div className="face-readout" aria-live="polite">
-          {label}
+          <span>{label}</span>
+          {isMultiDice ? (
+            <span className="dice-total">Somme : {totalLabel}</span>
+          ) : null}
         </div>
-        <button className="reset-button" onClick={onReset} type="button">
-          <RotateCcw aria-hidden="true" size={15} strokeWidth={1.9} />
-          Reset
-        </button>
       </div>
       <div className="settings-cluster">
-        <button
-          aria-controls="settings-panel"
-          aria-expanded={settingsOpen}
-          aria-label="Réglages"
-          className="settings-button"
-          onClick={() => {
-            setSettingsOpen((open) => !open);
-            onSettingsVisibilityChange();
-          }}
-          type="button"
-        >
-          <SlidersHorizontal aria-hidden="true" size={17} strokeWidth={1.8} />
-        </button>
+        <div className="settings-actions">
+          <button
+            aria-label="Réinitialiser"
+            className="reset-button"
+            onClick={onReset}
+            title="Réinitialiser"
+            type="button"
+          >
+            <RotateCcw aria-hidden="true" size={17} strokeWidth={1.9} />
+          </button>
+          <button
+            aria-controls="settings-panel"
+            aria-expanded={settingsOpen}
+            aria-label="Réglages"
+            className="settings-button"
+            onClick={() => {
+              setSettingsOpen((open) => !open);
+              onSettingsVisibilityChange();
+            }}
+            type="button"
+          >
+            <SlidersHorizontal aria-hidden="true" size={17} strokeWidth={1.8} />
+          </button>
+        </div>
         {settingsOpen ? (
           <section
             aria-label="Réglages de la scène"
@@ -115,21 +132,6 @@ export function MinimalUI({
               </div>
             </fieldset>
             <fieldset className="setting-group">
-              <legend>Monde</legend>
-              <div className="segment-options">
-                {worldTypeOptions.map((world) => (
-                  <button
-                    key={world.id}
-                    aria-pressed={settings.worldType === world.id}
-                    onClick={() => onSettingsChange({ worldType: world.id })}
-                    type="button"
-                  >
-                    {world.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset className="setting-group">
               <legend>Des</legend>
               <div className="segment-options dice-count-options">
                 {diceCountOptions.map((count) => (
@@ -166,7 +168,11 @@ export function MinimalUI({
           ))}
         </div>
       ) : null}
-      <p className="help-text">Glissez puis relâchez, ou appuyez sur Espace</p>
+      <p className="help-text">
+        {isMultiDice
+          ? "Espace pour lancer · Espace à nouveau pour relancer"
+          : "Glissez puis relâchez, ou appuyez sur Espace"}
+      </p>
     </div>
   );
 }
