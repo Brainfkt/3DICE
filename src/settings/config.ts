@@ -1,3 +1,5 @@
+import { keyboardThrowPowerConfig } from "../physics/config";
+
 export const diceAppearanceOptions = [
   {
     id: "ivory",
@@ -427,4 +429,3 @@ export function getLightingPreset(id: LightingPresetId) {
 export function getDiceType(id: DiceTypeId) {
   return diceTypeOptions.find((type) => type.id === id) ?? diceTypeOptions[0];
 }
-import { keyboardThrowPowerConfig } from "../physics/config";

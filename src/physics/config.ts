@@ -104,8 +104,11 @@ export function getDiceInitialTransforms(
 const sharedSettle = {
   linearSpeedThreshold: 0.055,
   angularSpeedThreshold: 0.13,
-  framesRequired: 44,
-  stableFaceFramesRequired: 18,
+  // At 120 Hz, keep roughly 450 ms of physical stillness and 180 ms of a
+  // stable upward face before revealing the result. This feels less abrupt
+  // without introducing wall-clock timing into deterministic face detection.
+  framesRequired: 54,
+  stableFaceFramesRequired: 22,
 } as const;
 
 const sharedFloorBounds = {
