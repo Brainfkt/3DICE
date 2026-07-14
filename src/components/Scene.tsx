@@ -1046,6 +1046,8 @@ export function Scene({
   );
   const diceCenterRef = useRef(new THREE.Vector3());
   const diceSpreadRef = useRef(0);
+  const parkingAnchorWorldRef = useRef(new THREE.Vector3());
+  const hadParkedDiceRef = useRef(false);
   const isAnyDiceDraggingRef = useRef(false);
   const activeDiceIdsRef = useRef(new Set<number>());
   const pendingMultiDiceRelaunchRef = useRef(false);
@@ -1076,6 +1078,21 @@ export function Scene({
       ),
     [diceCount, lockedDice],
   );
+  const cameraTrackedDiceIds = useMemo(
+    () => Array.from({ length: diceCount }, (_, index) => index),
+    [diceCount],
+  );
+  const lockedDiceSignature = lockedDice
+    .slice(0, diceCount)
+    .map((locked) => (locked ? "1" : "0"))
+    .join("");
+  const hasParkedDice = advancedMode && lockedDiceSignature.includes("1");
+
+  if (hasParkedDice && !hadParkedDiceRef.current) {
+    parkingAnchorWorldRef.current.copy(diceCenterRef.current);
+  }
+  hadParkedDiceRef.current = hasParkedDice;
+
   useEffect(() => {
     const handleResize = () => setViewportAspect(getViewportAspect());
     window.addEventListener("resize", handleResize);
@@ -1098,9 +1115,8 @@ export function Scene({
       const lockedRank = lockedIndices.indexOf(diceIndex);
       if (lockedRank === -1) return transform.position;
 
-      // Parked dice stay in a camera-relative row on the left of the active
-      // play area. Their anchor follows only the dice that can still be rolled,
-      // so the row remains visible without forcing the camera to zoom out.
+      // The row direction is based on the default camera only once. Its world
+      // anchor is captured when the first die is locked, then remains fixed.
       const rowOffset = (lockedRank - (lockedIndices.length - 1) / 2) * spacing;
       const offset = new THREE.Vector3()
         .addScaledVector(
@@ -1119,11 +1135,6 @@ export function Scene({
     lockedDice,
     viewportAspect,
   ]);
-  const lockedDiceSignature = lockedDice
-    .slice(0, diceCount)
-    .map((locked) => (locked ? "1" : "0"))
-    .join("");
-
   const setIsSceneActive = useCallback(
     (active: boolean) => {
       setSceneActivity({ active, epoch: simulationEpoch });
@@ -1142,7 +1153,9 @@ export function Scene({
     diceCenterRef.current.set(0, 0, 0);
 
     for (let index = 0; index < dicePositionRefs.length; index += 1) {
-      dicePositionRefs[index].current.set(...diceTransforms[index].position);
+      if (!lockedDice[index]) {
+        dicePositionRefs[index].current.set(...diceTransforms[index].position);
+      }
       diceCenterRef.current.add(dicePositionRefs[index].current);
     }
 
@@ -1170,9 +1183,10 @@ export function Scene({
   }, [refreshStaticShadow, multiDiceResetKey, resetKey]);
 
   useEffect(() => {
-    if (!advancedMode || !lockedDiceSignature.includes("1")) return;
+    if (!advancedMode) return;
     setCameraRecenterKey((value) => value + 1);
-  }, [advancedMode, lockedDiceSignature]);
+    refreshStaticShadow();
+  }, [advancedMode, lockedDiceSignature, refreshStaticShadow]);
 
   useEffect(() => {
     if (!pendingMultiDiceRelaunchRef.current) return;
@@ -1338,7 +1352,7 @@ export function Scene({
       />
       <DiceCenterTracker
         centerRef={diceCenterRef}
-        includedIndices={throwableDiceIds}
+        includedIndices={cameraTrackedDiceIds}
         positionRefs={dicePositionRefs}
         spreadRef={diceSpreadRef}
       />
@@ -1374,7 +1388,7 @@ export function Scene({
             keyboardThrowKey={keyboardThrowKey}
             keyboardThrowEnabled={throwableDiceIds.includes(diceIndex)}
             parked={advancedMode && Boolean(lockedDice[diceIndex])}
-            parkingAnchorRef={diceCenterRef}
+            parkingAnchorRef={parkingAnchorWorldRef}
             parkingOffset={parkingOffsets[diceIndex]}
             onGrab={handleDiceGrab}
             onImpact={handleDiceImpact}

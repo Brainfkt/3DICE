@@ -1,4 +1,4 @@
-import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import { ThreeEvent, useThree } from "@react-three/fiber";
 import {
   ContactForcePayload,
   ConvexHullCollider,
@@ -844,7 +844,7 @@ export function Dice({
 
       parkedWorldPosition.set(
         parkingAnchorRef.current.x + parkingOffset[0],
-        parkingOffset[1],
+        preParkTransformRef.current?.position.y ?? parkingOffset[1],
         parkingAnchorRef.current.z + parkingOffset[2],
       );
       body.setTranslation(parkedWorldPosition, false);
@@ -876,27 +876,6 @@ export function Dice({
     parkingOffset,
     trackedPosition,
   ]);
-
-  useFrame(() => {
-    if (!parked) return;
-    const body = bodyRef.current;
-    if (!body) return;
-
-    parkedWorldPosition.set(
-      parkingAnchorRef.current.x + parkingOffset[0],
-      parkingOffset[1],
-      parkingAnchorRef.current.z + parkingOffset[2],
-    );
-    const current = body.translation();
-    const distanceSquared =
-      (current.x - parkedWorldPosition.x) ** 2 +
-      (current.y - parkedWorldPosition.y) ** 2 +
-      (current.z - parkedWorldPosition.z) ** 2;
-    if (distanceSquared <= 0.000001) return;
-
-    body.setTranslation(parkedWorldPosition, false);
-    trackedPosition?.current.copy(parkedWorldPosition);
-  }, physicsSimulationConfig.updatePriority + 2);
 
   useEffect(() => {
     gl.domElement.style.cursor = dragEnabled
