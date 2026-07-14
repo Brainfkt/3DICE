@@ -25,6 +25,7 @@ But : le de doit donner une impression de poids, de contact et d'inertie credibl
 - [x] Ameliorer la stabilisation finale : seuils de repos, nombre de frames, sleep event Rapier si fiable.
 - [x] Verifier que la detection de face reste fiable apres chaque changement de collider ou de rotation.
 - [x] Ajouter des tests unitaires pour `getThrowVectors` : drag court, drag rapide, drag vertical et clamp de vitesse.
+- [x] Permettre un lancer physique au clavier avec la barre Espace, sans cumul d'impulsions ni scroll.
 - [x] Documenter dans ce fichier les valeurs physiques retenues et la raison de chaque changement.
 
 Valeurs retenues 2026-06-27 :
@@ -37,11 +38,25 @@ Valeurs retenues 2026-06-27 :
 - Decision : le couple principal vient du point de prise et du bras de levier Rapier ; la petite impulsion de poignet ne sert qu'a eviter les lancers trop morts lors d'une prise tres centree.
 - Stabilisation : vitesse lineaire `< 0.055`, vitesse angulaire `< 0.13`, `framesRequired` `44`, `stableFaceFramesRequired` `18`. Decision : ne pas utiliser `onSleep` pour le resultat final pour l'instant, car la stabilisation par seuils + face stable est deterministe, testable, et ne depend pas du timing de sommeil moteur.
 - Limites invisibles : demi-plateau `7.2`, murs hauteur `5.6`, epaisseur `0.38`, plafond epaisseur `0.14`.
-- Camera : position de base `[8.2, 5.6, 9.4]`, suivi amorti leger via ref mutable pour eviter des re-renders React pendant la simulation.
+- Camera : position de base revisee `[7.1, 5.0, 8.2]` pour rendre les details PBR lisibles, suivi amorti leger via ref mutable pour eviter des re-renders React pendant la simulation.
 - Feedback mur/plafond : ripple shader localise au point de contact et aligne sur le plan de la limite touchee, duree `0.38`, rouge clair `vec3(0.95, 0.08, 0.055)` puis fondu transparent.
 - Drag profondeur : le geste souris est relatif au point attrape ; axe horizontal = droite camera projetee au sol, le signe du geste vertical controle avant/arriere, et l'amplitude verticale souleve toujours le de pour eviter de tirer l'ancre dans le sol. Multiplicateurs `lateralGestureScale 0.86`, `depthGestureScale 0.78`, `verticalGestureScale 0.46`, world units par pixel bornes entre `0.006` et `0.018`.
 - Monde ouvert 2026-06-27 : les murs/plafond ne sont plus montes dans la scene active. Le code du monde borne est conserve dans `src/components/worlds/BoundedWorld.tsx` pour un futur choix de type de monde. Le sol actif utilise un collider et un mesh tres larges (`halfExtent 1024`) avec texture repetee pour simuler un sol sans bord visible.
 - Camera monde ouvert : suivi centre sur le de, sans clamp de plateau, zoom wheel/pinch entre `0.62` et `2.4`, et zoom-out automatique transitoire jusqu'a `2.15` quand le de part loin. Le suivi est fige pendant le drag pour ne pas perturber la prise du de, puis reprend au relachement avec rattrapage reactif borne : regard `10.5 + lag*1.05` max `34`, position `8.4 + lag*0.85` max `26`, auto-zoom des `1.45` unites de retard. Le bouton Reset remet immediatement position camera, cible de regard, zoom wheel/pinch et zoom courant a l'etat initial pour eviter de reparcourir le trajet depuis un lancer tres loin.
+
+Corrections de lancer 2026-07-13 :
+
+- Le premier mouvement n'attend plus un re-render React : les listeners pointeur sont montes en permanence et le pointeur actif est suivi par ref. Decision : un flick complet entre deux frames doit rester un vrai lancer.
+- Le relachement convertit aussi sa propre coordonnee ecran en cible, meme si le peripherique n'a livre aucun `pointermove`. L'estimateur utilise `event.timeStamp`, les evenements coalesces et une regression sur une fenetre temporelle, pour rendre la puissance moins dependante du polling souris/tactile.
+- Echantillonnage retenu : historique `160ms`, estimation sur les `110ms` les plus recents, duree minimale `16ms`, maximum `192` echantillons. Decision : borner par temps et memoire, jamais aux six derniers evenements seulement.
+- Le joint Rapier est retire synchroniquement du monde avant les impulsions de relachement. Cela empeche la contrainte encore vivante d'annuler le couple d'un flick tres rapide.
+- L'ancre suit directement la main, sans rate-limit perceptible. La tentative de limite cinematique a `8`, puis `24`, a ete rejetee apres retour utilisateur car elle bridait les gestes rapides legitimes.
+- L'impulsion de relachement complete seulement la vitesse manquante dans la direction du geste ; elle ne freine plus le momentum deja cree par le joint. Un echantillon est ajoute au pointer-up afin qu'une pause avant relachement n'herite pas d'une vitesse ancienne.
+- Securite extreme progressive : aucune compression sous `8` unites/s lineaires et `22` rad/s angulaires, puis compression douce asymptotique vers `14` unites/s et `42` rad/s. Decision : conserver une vraie plage de puissance sans plafond brutal.
+- Anti-tunneling : CCD active sur l'unique corps dynamique, timestep fixe `1/60`, `maxCcdSubsteps 4`, prediction soft-CCD `0.12` et `2` iterations solveur supplementaires limitees au de. Un geste synthetique a `14 u/s` qui descendait transitoirement le centre a `y=0.470` reste desormais entre `y=0.536` et `0.543` selon l'angle, avec correction des le sous-pas suivant, sans diminuer les vitesses maximales. Le surcout est borne a l'unique corps actif ; la mesure warm-flight DPR 2 reste a `59.97fps` / `16.67ms`.
+- Masse du premier flick : comme Rapier est suspendu au repos, la masse `0.5` appliquee au collider est forcee a se recalculer au grab, avant toute impulsion. Sans ce recalcul, un down/up sous-frame utilisait encore la masse issue de la densite par defaut (`0.941`) jusqu'au premier step et sortait a seulement `3.04 u/s`; le meme geste sort maintenant a `5.72 u/s`, atteint `8.54 u/s` apres le premier contact et `30.10 rad/s`, sans augmenter les multiplicateurs de lancer.
+- Robustesse interaction : le canvas capture le pointeur pendant le drag ; `pointercancel`, perte de capture, changement d'onglet et perte de focus relachent proprement le joint et laissent le de terminer sa course. Reset/profil invalide immediatement l'epoch de simulation, sans attendre un effet React. Le sommeil manuel final est retire avant la synchronisation Rapier -> Three afin de ne jamais figer le mesh une frame trop tot.
+- Lancer clavier : Espace reutilise exactement la chaine vitesse au point -> impulsion manquante -> `applyImpulseAtPoint` -> couple borne. Valeurs : vitesse avant `4.1`, verticale `3.8`, jitter lateral `0.55`, variation de puissance `+-7%`, point local `[0.31, 0.50, 0.23]`. Le repeat, les controles/editables et tout nouvel appui pendant drag/vol sont ignores ; l'evenement gere est consomme pour ne jamais faire defiler la page.
 
 Micro-ajustements drop 2026-06-27 :
 
@@ -66,15 +81,24 @@ But : conserver un rendu premium, mais sans traitements couteux inutiles ni warn
 - [x] Fusionner ou simplifier les geometries de points si elles deviennent un cout visible.
 - [x] Ajuster shadow map, soft shadows et DPR pour garder un bon compromis qualite/performance.
 - [x] Ajouter une note de budget cible : temps de frame, taille bundle acceptable, nombre de draw calls approximatif.
+- [x] Suspendre le rendu WebGL et les pas Rapier au repos, avec reprise explicite pour drag, lancer, camera, zoom, ombres et Reset.
 
 Budget rendu retenu 2026-06-27 :
 
 - Budget frame : desktop DPR 1 `<= 16.7ms`, desktop DPR 2 `<= 24ms`, mobile 390x844 DPR 2 `<= 33ms`.
-- Budget bundle : JS gzip acceptable `<= 1100 kB`; build courant `1069.18 kB gzip`, warning Vite accepte pour cette demo mono-ecran Three/Rapier.
+- Budget bundle : JS gzip acceptable `<= 1100 kB`; build courant `1075.95 kB gzip`, warning Vite accepte pour cette demo mono-ecran Three/Rapier.
 - Instrumentation : `?perf=1` active les mesures internes dans `window.__3diceLastRenderMetrics` et `window.__3diceRenderMetrics`; `?dpr=1` ou `?dpr=2` force la mesure DPR sans UI permanente.
-- Mesures : desktop DPR 1 `60.0fps`, `16.67ms`, `23` draw calls, `24596` triangles ; desktop DPR 2 `60.2fps`, `16.62ms`, `23` draw calls, `24596` triangles ; mobile 390x844 DPR 2 `60.1fps`, `16.63ms`, `23` draw calls, `24596` triangles.
-- Reglages retenus : Canvas DPR par defaut `[1, 1.75]`, `SoftShadows` `12` samples, shadow map `2048`, aucun post-processing.
-- Decision : ne pas fusionner les points du de pour l'instant ; le cout mesure reste faible et les pips separes gardent le code simple et lisible.
+- Mesures courantes : desktop DPR 1 `59.89fps` / `16.70ms`, desktop DPR 2 `59.79fps` / `16.73ms`, mobile 390x844 DPR 2 `59.96fps` / `16.68ms`, `4` draw calls et `5802` triangles.
+- Reglages retenus : Canvas DPR par defaut `[1, 1.5]`, PCF shadow map `1024`, contact shadow statique `256`, environnement local `256` capture une fois, aucun post-processing.
+- Decision : topologie adaptative indexee pour coque et cavites, plus legere que les anciens points instancies et sans contours crénelés.
+
+Boucle au repos retenue 2026-07-13 :
+
+- `Canvas` utilise `frameloop="demand"` et Rapier suit la boucle R3F au lieu de conserver son propre `requestAnimationFrame`. Un driver remet le delta de l'horloge a zero au front repos -> actif, puis invalide uniquement du grab a la stabilisation ; `Physics.paused` coupe `world.step()` hors interaction. Ordre retenu : driver `-101`, physique `-100`, camera/lumieres `0`, afin que le rendu lise toujours la transform physique courante.
+- La camera invalide seulement pendant son amortissement ; wheel, pinch, Reset, mutations pointeur et rafraichissement des ombres demandent explicitement une frame. Le delta camera est borne a `1/30` apres une longue veille pour eviter un saut au reveil.
+- Mesure avant : scene immobile rendue en continu a environ `60fps`, soit `301` frames sur `5.014s` desktop et `5080` appels WebGL sur `16.934s`. Apres : `0` appel WebGL et `0` callback RAF sur `3.0s`, avec historique physique strictement inchange, au repos initial comme apres stabilisation ; mobile DPR 2 conserve aussi `0` appel WebGL sur `2.2s`.
+- Le mode diagnostic `?perf=1` force volontairement une boucle continue afin de conserver des mesures par frame comparables ; la physique reste suspendue. Mesures finales apres PBR : environ `60fps` sur desktop DPR 1/2 et mobile DPR 2, `4` draw calls et `5802` triangles.
+- Bundle final : `1075.95 kB` JS gzip, sous le budget accepte de `1100 kB` pour cette demo mono-ecran Three/Rapier.
 
 ## Priorite 3 - Realisme visuel sobre
 
@@ -82,35 +106,56 @@ But : ameliorer l'impression photorealiste sans degrader la performance.
 
 - [x] Ameliorer les points du de : effet creuse visuel, normal map ou geometrie fine si le cout reste bas.
 - [x] Ajuster la matiere ivoire : roughness, clearcoat, tonemapping, intensite de l'environnement.
-- [ ] Ameliorer le contact avec le sol : ombre plus lisible, pas de halo ou flottement.
-- [ ] Rendre le plateau plus mat et textural sans bruit visuel excessif.
+- [x] Ameliorer le contact avec le sol : ombre plus lisible, pas de halo ou flottement.
+- [x] Rendre le plateau plus mat et textural sans bruit visuel excessif.
 - [x] Ajouter un feedback d'impact localise quand le de touche une limite invisible.
-- [ ] Verifier que le de reste lisible sur fond sombre en desktop et mobile.
-- [ ] Garder la palette sobre : graphite, ivoire, noir, pas d'accent flashy.
+- [x] Verifier que le de reste lisible sur fond sombre en desktop et mobile.
+- [x] Garder la palette sobre : graphite, ivoire, noir, pas d'accent flashy.
 
 Points du de retenus 2026-06-28 :
 
-- Decision : remplacer les 21 disques plats par deux `InstancedMesh` partages, un disque noir et un anneau sombre de recess, pour donner un effet creuse sans CSG ni texture supplementaire.
-- Valeurs : disque noir rayon `0.066`, anneau sombre `0.071 -> 0.098`, offset surface `0.0065`, `44` segments. Materiaux `MeshStandardMaterial` rugueux pour rester coherents avec le rendu PBR natif.
-- Cout mesure : `4` draw calls apres changement, `40864` triangles, desktop 1280x900 DPR 2 `60.0fps` / `16.67ms`, mobile 390x844 DPR 2 `60.0fps` / `16.67ms`.
-- Decision : accepter la hausse de triangles par rapport aux anciens disques, car les instances reduisent fortement les draw calls et les budgets frame restent respectes.
+- Revision 2026-07-13 : les disques/anneaux rapportes sont remplaces par une surface fermee reellement concave. Chaque point comprend une levre ivoire et un bol noir analytique ; la coque utilise des caps troues, 12 quarts de cylindre et 8 coins spheriques. Aucun CSG ni dependance.
+- Valeurs : rayon de cavite `0.105`, rayon peint `0.073`, profondeur physique `0.052`, offset `0.235`, rayon d'arete `0.155`, 20 segments max par point et 8 par arete.
+- Topologie production : deux geometries indexees, coque `2858` triangles / `2280` sommets et bols `2940` / `1701`, soit `5798` triangles et environ `162 kB`. La scene passe de `5` appels / `8100` triangles a `4` / `5802`, avec des contours circulaires propres.
+- Tests : 21 centres a la profondeur attendue, normales finies/unitaires, triangles non degeneres et bien orientes, surface fermee apres soudure de la couture de materiau.
 
 Matiere ivoire retenue 2026-06-28 :
 
-- De : couleur `#efe7d3`, roughness `0.62`, clearcoat `0.28`, clearcoat roughness `0.72`, sheen `0.08`, metalness `0`.
-- Texture de rugosite : `DataTexture` deterministe `64x64`, seed `0x1c0ffee`, base `218`, variation `24`, repetition `2x2`. Decision : micro-variation de rugosite seulement, sans normal map ni post-processing, pour eviter un effet plastique tout en gardant un cout faible.
-- Scene : tone mapping exposure `1.03`, ambient `0.48`, point light secondaire `0.36`, environment intensity `0.48`.
-- Mesures : desktop 1280x720 DPR 2 stable `60.0fps` / `16.67ms`, lancer en mouvement `44.1fps` / `22.69ms` sous budget DPR 2 `24ms`, mobile 390x844 DPR 2 `60.0fps` / `16.67ms`, `4` draw calls, `40864` triangles, JS gzip `1069.72 kB`.
+- Revision 2026-07-13 : la resine ivoire utilise trois `DataTexture` tileables `128x128` (albedo sRGB, roughness et normale lineaires), mipmaps trilineaires et anisotropie `4`. Les variations sont deterministes et volontairement subtiles pour ne pas simuler un bruit sale.
+- Materiau : couleur `#fffaf2`, roughness `0.50` modulee par la carte autour de `218/255`, clearcoat `0.64`, clearcoat roughness `0.22`, IOR `1.49`, specular intensity `0.50`, normal scale `0.08`, clearcoat normal scale `0.035`, sheen retire car inadapte a une resine.
+- Points noirs : roughness `0.68`, clearcoat `0.12`, avec l'occlusion et les reflets produits par les bols physiques.
+
+Sol graphite retenu 2026-07-13 :
+
+- Trois cartes PBR tileables `256x256`, seed `0x3d1ce`, couleur sRGB et donnees lineaires, filtre trilineaire, anisotropie bornee a `4`. Le motif combine plusieurs octaves de value-noise periodique, des fibres cassees par une enveloppe aleatoire et des speckles rares, sans `Math.random` ni dependance externe.
+- Valeurs : repeat `1024` sur le plan ouvert, couleur multiplicative `#50534b`, roughness `1.0` modulee autour de `233/255`, normal scale `0.055`. Decision : remplacer les sinusoides croisees dominantes par un relief surtout isotrope afin de supprimer le quadrillage/moirage visible en DPR 2, tout en gardant une microstructure mate a courte distance.
+- Empreinte : `960 KiB` bruts pour les six cartes ivoire/sol, environ `1.25 MiB` avec mipmaps. Aucun cout par frame apres l'upload initial.
+
+Ombres et lumieres retenues 2026-07-01, revisees 2026-07-13 :
+
+- Pipeline : une seule `SpotLight` native porte l'ombre dynamique, `ContactShadows` ne calcule que le contact final, et un environnement local `256` compose de trois `Lightformer` remplace le preset HDR distant. L'environnement est capture une fois (`frames=1`) ; aucun reseau ni calcul continu.
+- Reflets studio : carte chaude `#fff3dd` intensite `4.5`, fill froid `#dce6ff` `1.4`, strip neutre `2.2`, environnement `1.15`. Tone mapping ACES exposure `1.15`, ambient `0.22` et hemisphere froid/chaud `0.38` gardent les faces ombrees lisibles sans annuler le volume.
+- Source principale : offset `[3.6, 7.0, 4.4]`, intensite photometrique `20`, decay physique `2`, angle `0.52`, penumbra `0.84`, map `1024`, intensite ombre `0.90`, bias `-0.00012`, normal bias `0.004`, far `16`.
+- Decision ombre douce : `PCFSoftShadowMap` ignorait le `shadow.radius` dans Three r171. Passage a `PCFShadowMap` pour rendre le rayon `2.4` effectif, sans PCSS/VSM/SSAO/SSR ni passe de post-processing.
+- Contact : position `y=0.003`, scale `1.8`, far `1.5`, blur `1.0`, opacity `0.55`, resolution `256`. Il est masque pendant drag/lancer et calcule une seule frame apres immobilisation ; la shadow map suit le de en mouvement puis est figee.
+- Mesures finales : desktop DPR 1 `59.89fps` / `16.70ms`, desktop DPR 2 `59.79fps` / `16.73ms`, mobile 390x844 DPR 2 `59.96fps` / `16.68ms`, `4` draw calls, `5802` triangles. Repos initial et apres lancer : `0` appel WebGL et `0` callback RAF sur `3s`. Bundle `1075.95 kB` gzip, console sans erreur/warning, aucun canvas vide.
 
 ## Priorite 4 - Robustesse et maintenance
 
 But : faciliter les iterations sans casser la sensation physique.
 
 - [ ] Isoler davantage la logique de drag physique si `Dice.tsx` devient trop dense.
-- [ ] Ajouter une petite couche de debug optionnelle en code, masquee par defaut, pour lire vitesse lineaire, vitesse angulaire et face detectee.
+- [x] Ajouter une petite couche de debug optionnelle en code, masquee par defaut, pour lire vitesse lineaire, vitesse angulaire et face detectee.
 - [x] Documenter les invariants : pas de sidebar, pas de gros menu, interaction immediate.
 - [x] Ajouter des tests pour la detection de repos si elle est extraite en fonction pure.
 - [x] Garder `README.md` a jour apres chaque changement majeur de stack ou de comportement.
+
+Debug physique retenu 2026-07-13 :
+
+- Activation stricte par `?physicsDebug=1`, sans overlay ni nouveau controle DOM.
+- API console en lecture seule : `window.__3dicePhysicsDebug.read()`. Le rapport copie les donnees et borne l'historique a `720` echantillons actifs.
+- Donnees : phase `idle/drag/throw/settle/settled`, type d'echantillon, profil, position, quaternion, vitesses et normes lineaire/angulaire, face candidate/finale, etat de sommeil et controle de valeurs finies.
+- Cout normal : global absent et aucune lecture supplementaire du corps Rapier ; seule une branche nulle reste dans le hook physique.
 
 ## Plus tard - Personnalisation
 
@@ -163,3 +208,15 @@ Ajouter les notes courtes ici, dans l'ordre chronologique.
 - 2026-06-27 : miniature navigateur ajustee sur la face `3` du de via favicon SVG inline. Validation : `npm run build`, `npm run test`.
 - 2026-06-28 : points du de rendus en effet creuse sobre via disque noir + anneau sombre instancies, sans changer la physique ni la detection de face. Validation : `npm run build`, `npm run test`, `npm run dev` + Playwright desktop/mobile, lancer stabilise `Face: 4`, Reset OK, console sans erreur/warning, captures visuelles OK. Decision : Browser integre indisponible (`agent.browsers.list()` vide), validation faite avec Playwright CLI.
 - 2026-06-28 : matiere ivoire ajustee avec roughness map deterministe, clearcoat reduit, tonemapping et environnement recalibres pour un de moins plastique et plus mat. Validation : `npm run build`, `npm run test`, `npm run dev` + Playwright desktop/mobile, lancer stabilise `Face: 1`, Reset OK, console sans erreur/warning, captures visuelles OK. Decision : pas de normal map pour l'instant, la rugosite suffit et garde le rendu sobre.
+- 2026-07-01 : ombres/lumieres refondues en rig studio configurable : spot shadow-caster, fill/rim non shadow, contact shadow dynamique puis fige, shadow map figee au repos, et pas physique fixe `1/60` pour eviter la disparition du de sous gros deltas. Validation : lecture docs Three/drei, `npm run build`, `npm run test`, serveur Vite + Playwright desktop/mobile, drag avec de leve (ombre qui s'efface), lancer stabilise `Face: 3`, Reset OK, console sans erreur/warning. Mesures finales : desktop DPR 1 et DPR 2 `60fps`, mobile DPR 2 `60fps`, `5` draw calls, `16290` triangles. Correction finale : contact shadow renforce pour rester visible sur sol graphite.
+- 2026-07-13 : systeme de lancer rapide refondu apres retours utilisateur : listeners pointeur permanents, retrait synchrone du joint avant impulsion, momentum jamais freine par la correction de relachement, compression douce des seuls outliers et CCD Rapier. Validation : `npm run build`, `npm run test` (`44` tests), Vite + Playwright desktop/mobile, court/rapide/vertical/diagonal/coin/face, flick immediat entre deux frames, Reset et detection finale. Resultats representatifs : mobile immediat `Face: 2/6/1/4`, desktop court `Face: 1`, coin rapide `Face: 4`; rotation visible des `100ms`, aucune traversee du sol, console propre.
+- 2026-07-13 : rendu allege et eclairage adouci apres retour performance/realisme : contact shadow statique seulement, aucun remount FBO au lancer, spot shadow natif mobile avec intensite/rayon regles, rim retire, lumiere a hauteur studio fixe, DPR max `1.5`, sol plat `2` triangles. Validation : `npm run build`, `npm run test`, captures desktop/mobile, lancer/reset, console propre. Mesures structurelles : `5` draw calls, `8100` triangles, `1070.53 kB` JS gzip ; mesure FPS headless ecartee car plafonnee artificiellement a `30fps` jusque DPR 1.
+- 2026-07-13 : telemetrie physique cachee ajoutee avec `?physicsDebug=1`, API console defensive, phases autoritatives et historique borne sans React state par frame. Validation : `npm run build`, `npm run test`, Playwright desktop/mobile, mode normal sans global ni DOM supplementaire, coexistence `perf/dpr`, Reset en mouvement et console propre. Mesures structurelles inchangees : `5` draw calls, `8100` triangles ; bundle `1071.71 kB` gzip.
+- 2026-07-13 : flick sans `pointermove` corrige : coordonnee du `pointerup`, timestamps natifs, evenements coalesces, historique temporel et regression de vitesse independante de la frequence d'echantillonnage. Validation : `npm run build`, `npm run test` (`54` tests), Playwright desktop/mobile, court/rapide/vertical/coin/face, tactile, Reset, face finale et console propre. Cas CDP down/up direct mesure avant `0.98 u/s` / `3.60 rad/s`, apres `8.35 u/s` / `30.53 rad/s`, sans traversee du sol.
+- 2026-07-13 : rendu et simulation suspendus au repos via Canvas demand + Rapier independant/paused ; invalidations camera, zoom, pointeur et ombres rendues explicites. Validation : `npm run build`, `npm run test` (`54` tests), Vite + Playwright desktop/mobile DPR 2, lancer/settle/zoom/Reset, captures non vides et console propre. Mesure : avant `~60fps` continus au repos, apres `0` appel WebGL sur `3.0s` desktop et `2.2s` mobile ; diagnostic force toujours `60fps`, `5` calls, `8100` triangles.
+- 2026-07-13 : masse collider resynchronisee au grab avant le premier step suspendu ; flick direct identique passe de `3.04 u/s` / `17.20 rad/s` a `5.72 u/s` / `30.10 rad/s`, pic `8.54 u/s`, puis `Face: 4` sans penetration du sol. Capture pointeur et annulation focus/onglet ajoutees, Reset/profil coupe la simulation des le render, transform final synchronise avant pause. Validation : `npm run build`, `npm run test` (`54` tests), Playwright rapide/vertical/court/coin/face, Reset en vol, blur en drag (`Face: 3`), desktop/mobile et console propre.
+- 2026-07-13 : lancer Espace ajoute via la meme impulsion Rapier excentree que le relachement souris, avec variation bornee et anti-repeat. Validation : build, `31` tests cibles, Playwright desktop (`5.02 u/s`, `25.93 rad/s`, `Face: 3`), maintien Espace = une seule release, second lancer apres settle, scroll `0`, controle focus preserve et console propre.
+- 2026-07-13 : 21 points remplaces par de vraies cavites analytiques fermees, avec levres ivoire et bols noirs, sans CSG. Validation : `npm run build`, `npm run test` (`68` tests), macro Playwright DPR 2, console propre ; production `5798` triangles, `3981` sommets, `4` appels de rendu et `59.87fps` diagnostic desktop DPR 1.
+- 2026-07-13 : resine ivoire et sol graphite passes a des jeux PBR deterministes albedo/roughness/normale avec mipmaps, sans image distante ni post-processing. Validation : `npm run build`, `npm run test` (`77` tests apres integration lumiere), captures Playwright desktop/mobile DPR 2, cavites et relief lisibles, console propre ; textures environ `1.25 MiB` avec mipmaps, bundle `1075.90 kB` gzip.
+- 2026-07-13 : environnement HDR distant remplace par trois cartes de reflexion locales precalculees ; ombre native rendue reellement douce via PCF, contact resserre, lumiere inverse-square et camera legerement rapprochee. Validation : build/test (`77`), captures repos/vol/settled desktop/mobile, ombre dynamique a `y=1.33`, aucun acne dans les cavites, reseau externe nul, console propre ; `4` calls / `5802` triangles / ~`60fps`, idle `0` draw sur `3s`.
+- 2026-07-13 : CCD passe de `1` a `2` sous-pas apres le playtest vertical extreme, sans reduire la puissance. Validation : lancer `14.0 u/s` / `40.27 rad/s`, minimum centre `y=0.543` contre `0.492`, stabilisation `Face: 3`, aucune traversee.
