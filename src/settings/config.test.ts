@@ -8,29 +8,62 @@ import {
 describe("stored app settings", () => {
   it("keeps the single ivory die setup as the default", () => {
     expect(defaultAppSettings).toEqual({
-      version: 2,
+      version: 3,
+      advancedMode: false,
+      audioEnabled: true,
+      autoRecenterEnabled: true,
+      cameraGesturesEnabled: true,
       diceAppearanceId: "ivory",
-      surfaceId: "graphite",
       diceCount: 1,
+      diceType: "d6",
+      hapticsEnabled: true,
+      historyEnabled: false,
+      impactEffectsEnabled: true,
+      lightingPresetId: "studio",
+      resultAnimationEnabled: true,
+      surfaceId: "graphite",
+      throwPower: 1,
     });
-    expect(SETTINGS_STORAGE_KEY).toContain("v2");
+    expect(SETTINGS_STORAGE_KEY).toContain("v3");
   });
 
   it("restores every supported setting", () => {
     expect(
       parseStoredSettings(
         JSON.stringify({
-          version: 2,
-          diceAppearanceId: "garnet",
-          surfaceId: "clay",
+          version: 3,
+          advancedMode: true,
+          audioEnabled: false,
+          autoRecenterEnabled: false,
+          cameraGesturesEnabled: false,
+          diceAppearanceId: "brushed-metal",
           diceCount: 4,
+          diceType: "d20",
+          hapticsEnabled: false,
+          historyEnabled: true,
+          impactEffectsEnabled: false,
+          lightingPresetId: "night-neon",
+          resultAnimationEnabled: false,
+          surfaceId: "dark-wood",
+          throwPower: 1.25,
         }),
       ),
     ).toEqual({
-      version: 2,
-      diceAppearanceId: "garnet",
-      surfaceId: "clay",
+      version: 3,
+      advancedMode: true,
+      audioEnabled: false,
+      autoRecenterEnabled: false,
+      cameraGesturesEnabled: false,
+      diceAppearanceId: "brushed-metal",
       diceCount: 4,
+      diceType: "d20",
+      hapticsEnabled: false,
+      historyEnabled: true,
+      impactEffectsEnabled: false,
+      lightingPresetId: "night-neon",
+      resultAnimationEnabled: false,
+      surfaceId: "dark-wood",
+      throwPower: 1.25,
     });
   });
 
@@ -63,10 +96,27 @@ describe("stored app settings", () => {
         }),
       ),
     ).toEqual({
-      version: 2,
+      ...defaultAppSettings,
       diceAppearanceId: "sage",
       surfaceId: "sand",
       diceCount: 3,
+    });
+  });
+
+  it("clamps advanced throw power and rejects stale advanced ids", () => {
+    expect(
+      parseStoredSettings(
+        JSON.stringify({
+          advancedMode: true,
+          diceType: "d100",
+          lightingPresetId: "sunset",
+          throwPower: 4,
+        }),
+      ),
+    ).toEqual({
+      ...defaultAppSettings,
+      advancedMode: true,
+      throwPower: 1.35,
     });
   });
 });

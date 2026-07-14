@@ -69,6 +69,8 @@ type DiceProps = {
   initialRotation: [number, number, number];
   keyboardThrowKey: number;
   keyboardThrowEnabled: boolean;
+  parked: boolean;
+  parkingPosition: [number, number, number];
   resetBeforeKeyboardThrow: boolean;
   throwPower: number;
   physicsDebugEnabled?: boolean;
@@ -236,6 +238,8 @@ export function Dice({
   initialRotation,
   keyboardThrowKey,
   keyboardThrowEnabled,
+  parked,
+  parkingPosition,
   resetBeforeKeyboardThrow,
   throwPower,
   physicsDebugEnabled = false,
@@ -269,6 +273,11 @@ export function Dice({
   const pointerSamples = useRef<PointerSample[]>([]);
   const activePointerId = useRef<number | null>(null);
   const handledKeyboardThrowKey = useRef(keyboardThrowKey);
+  const wasParkedRef = useRef(false);
+  const preParkTransformRef = useRef<{
+    position: THREE.Vector3;
+    rotation: THREE.Quaternion;
+  } | null>(null);
   const lastImpactAt = useRef(-Infinity);
   const dragTargetDirtyRef = useRef(false);
   const grabbedLocalAnchor = useRef(new THREE.Vector3());
@@ -510,6 +519,8 @@ export function Dice({
     }
     settleState.current = createSettleState();
     hasActiveThrow.current = false;
+    wasParkedRef.current = false;
+    preParkTransformRef.current = null;
     setIsDragging(false);
     setDragState(null);
     onDragChange?.(false);
@@ -806,6 +817,55 @@ export function Dice({
   }, [resetDice, resetKey]);
 
   useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    if (parked) {
+      if (!wasParkedRef.current) {
+        const translation = body.translation();
+        const rotation = body.rotation();
+        preParkTransformRef.current = {
+          position: new THREE.Vector3(
+            translation.x,
+            translation.y,
+            translation.z,
+          ),
+          rotation: new THREE.Quaternion(
+            rotation.x,
+            rotation.y,
+            rotation.z,
+            rotation.w,
+          ),
+        };
+      }
+
+      body.setTranslation(
+        { x: parkingPosition[0], y: parkingPosition[1], z: parkingPosition[2] },
+        true,
+      );
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      trackedPosition?.current.set(...parkingPosition);
+      hasActiveThrow.current = false;
+      activePointerId.current = null;
+      body.sleep();
+      invalidate();
+    } else if (wasParkedRef.current && preParkTransformRef.current) {
+      const previous = preParkTransformRef.current;
+      body.setTranslation(previous.position, true);
+      body.setRotation(previous.rotation, true);
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      trackedPosition?.current.copy(previous.position);
+      body.sleep();
+      invalidate();
+      preParkTransformRef.current = null;
+    }
+
+    wasParkedRef.current = parked;
+  }, [invalidate, parked, parkingPosition, trackedPosition]);
+
+  useEffect(() => {
     gl.domElement.style.cursor = dragEnabled
       ? isDragging
         ? "grabbing"
@@ -998,6 +1058,7 @@ export function Dice({
         canSleep
         restitution={physicsProfile.dice.restitution}
         friction={physicsProfile.dice.friction}
+        gravityScale={parked ? 0 : 1}
         softCcdPrediction={physicsSimulationConfig.softCcdPrediction}
         position={initialPosition}
         rotation={initialRotation}
@@ -1010,6 +1071,7 @@ export function Dice({
             mass={physicsProfile.dice.mass}
             friction={physicsProfile.dice.friction}
             restitution={physicsProfile.dice.restitution}
+            sensor={parked}
           />
         ) : (
           <RoundCuboidCollider
@@ -1023,6 +1085,7 @@ export function Dice({
             mass={physicsProfile.dice.mass}
             friction={physicsProfile.dice.friction}
             restitution={physicsProfile.dice.restitution}
+            sensor={parked}
           />
         )}
         <group onPointerDown={dragEnabled ? handlePointerDown : undefined}>

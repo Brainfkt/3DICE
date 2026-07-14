@@ -175,6 +175,27 @@ describe("getThrowVectors", () => {
 });
 
 describe("getKeyboardThrowVectors", () => {
+  it("scales keyboard power within the advanced safety envelope", () => {
+    const weak = getKeyboardThrowVectors({
+      forwardAxis: { x: 0, y: 0, z: -1 },
+      rightAxis: { x: 1, y: 0, z: 0 },
+      powerScale: 0.65,
+      random: () => 0.5,
+    });
+    const strong = getKeyboardThrowVectors({
+      forwardAxis: { x: 0, y: 0, z: -1 },
+      rightAxis: { x: 1, y: 0, z: 0 },
+      powerScale: 1.35,
+      random: () => 0.5,
+    });
+
+    expect(Math.hypot(strong.pointVelocity.x, strong.pointVelocity.z)).toBeCloseTo(
+      Math.hypot(weak.pointVelocity.x, weak.pointVelocity.z) * (1.35 / 0.65),
+      5,
+    );
+    expect(strong.pointVelocity.y).toBeCloseTo(24 * 1.35, 5);
+  });
+
   it("creates a finite, strong camera-relative throw", () => {
     const randomValues = [0.5, 0.5, 0.75];
     const result = getKeyboardThrowVectors({

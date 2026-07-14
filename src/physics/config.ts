@@ -1,3 +1,10 @@
+export const keyboardThrowPowerConfig = {
+  default: 1,
+  min: 0.65,
+  max: 1.35,
+  step: 0.05,
+} as const;
+
 const sharedThrow = {
   pointerSampleHistoryMs: 160,
   pointerSampleWindowMs: 110,
@@ -74,13 +81,16 @@ const diceLayoutCoordinates = {
 
 export type SupportedDiceCount = keyof typeof diceLayoutCoordinates;
 
-export function getDiceInitialTransforms(count: SupportedDiceCount) {
+export function getDiceInitialTransforms(
+  count: SupportedDiceCount,
+  initialHeight: number = physicsWorldConfig.diceInitialPosition[1],
+) {
   const baseRotation = physicsWorldConfig.diceInitialRotationEuler;
 
   return diceLayoutCoordinates[count].map(([layoutX, layoutZ], index) => ({
     position: [
       layoutX * physicsWorldConfig.diceLayoutSpacing,
-      physicsWorldConfig.diceInitialPosition[1],
+      initialHeight,
       layoutZ * physicsWorldConfig.diceLayoutSpacing,
     ] as [number, number, number],
     rotation: [

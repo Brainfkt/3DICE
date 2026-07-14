@@ -49,6 +49,7 @@ export type KeyboardThrowInput = {
   forwardAxis: VectorComponents;
   rightAxis: VectorComponents;
   random?: () => number;
+  powerScale?: number;
 };
 
 export type ReleaseImpulseLimits = {
@@ -275,6 +276,7 @@ export function getKeyboardThrowVectors({
   forwardAxis,
   rightAxis,
   random = Math.random,
+  powerScale = 1,
 }: KeyboardThrowInput) {
   const keyboard = physicsConfig.throw.keyboard;
   const forward = toVector3(forwardAxis).setY(0);
@@ -295,7 +297,8 @@ export function getKeyboardThrowVectors({
   const lateralSample = clampNumber(random(), 0, 1) * 2 - 1;
   const powerSample = clampNumber(random(), 0, 1) * 2 - 1;
   const spinDirection = random() < 0.5 ? -1 : 1;
-  const power = 1 + powerSample * keyboard.powerJitter;
+  const safePowerScale = clampNumber(powerScale, 0.65, 1.35);
+  const power = safePowerScale * (1 + powerSample * keyboard.powerJitter);
   const pointVelocity = forward
     .multiplyScalar(keyboard.forwardVelocity)
     .addScaledVector(right, lateralSample * keyboard.lateralJitterVelocity)
