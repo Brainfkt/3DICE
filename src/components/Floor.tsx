@@ -2,7 +2,7 @@ import { CuboidCollider, RigidBody } from "@react-three/rapier";
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { PhysicsProfile } from "../physics/config";
+import { PhysicsProfile, physicsWorldConfig } from "../physics/config";
 import { renderConfig } from "../render/config";
 import { createFloorPbrTextures } from "../render/floorTexture";
 
@@ -10,7 +10,6 @@ type FloorProps = {
   physicsProfile: PhysicsProfile;
 };
 
-const OPEN_WORLD_HALF_EXTENT = 1024;
 const FLOOR_NORMAL_SCALE = new THREE.Vector2(
   renderConfig.materials.floor.normalScale,
   renderConfig.materials.floor.normalScale,
@@ -18,7 +17,7 @@ const FLOOR_NORMAL_SCALE = new THREE.Vector2(
 
 export function Floor({ physicsProfile }: FloorProps) {
   const floor = physicsProfile.floor;
-  const size = OPEN_WORLD_HALF_EXTENT * 2;
+  const size = physicsWorldConfig.openWorldHalfExtent * 2;
   const gl = useThree((state) => state.gl);
   const floorTextures = useMemo(
     () =>
@@ -57,7 +56,11 @@ export function Floor({ physicsProfile }: FloorProps) {
       friction={floor.friction}
     >
       <CuboidCollider
-        args={[OPEN_WORLD_HALF_EXTENT, floor.colliderHalfHeight, OPEN_WORLD_HALF_EXTENT]}
+        args={[
+          physicsWorldConfig.openWorldHalfExtent,
+          floor.colliderHalfHeight,
+          physicsWorldConfig.openWorldHalfExtent,
+        ]}
         position={[0, -floor.colliderHalfHeight, 0]}
         restitution={floor.restitution}
         friction={floor.friction}

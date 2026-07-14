@@ -58,6 +58,12 @@ export const physicsSimulationConfig = {
   updatePriority: -100,
 } as const;
 
+export const physicsWorldConfig = {
+  diceInitialPosition: [0, 0.58, 0] as [number, number, number],
+  diceInitialRotationEuler: [0.1, -0.28, 0.18] as [number, number, number],
+  openWorldHalfExtent: 1024,
+} as const;
+
 const sharedSettle = {
   linearSpeedThreshold: 0.055,
   angularSpeedThreshold: 0.13,

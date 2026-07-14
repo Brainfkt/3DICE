@@ -9,6 +9,7 @@ import { Physics } from "@react-three/rapier";
 import * as THREE from "three";
 import {
   MutableRefObject,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -18,7 +19,11 @@ import {
 } from "react";
 import { Dice } from "./Dice";
 import { Floor } from "./Floor";
-import { PhysicsProfile, physicsSimulationConfig } from "../physics/config";
+import {
+  PhysicsProfile,
+  physicsSimulationConfig,
+  physicsWorldConfig,
+} from "../physics/config";
 import { isPhysicsDebugEnabled } from "../physics/telemetry";
 import { renderConfig } from "../render/config";
 import {
@@ -43,8 +48,10 @@ type SceneActivity = {
   epoch: string;
 };
 
-const BASE_CAMERA_POSITION = new THREE.Vector3(7.1, 5, 8.2);
-const BASE_LOOK_AT = new THREE.Vector3(0, 0.36, 0);
+const BASE_CAMERA_POSITION = new THREE.Vector3(
+  ...renderConfig.camera.position,
+);
+const BASE_LOOK_AT = new THREE.Vector3(...renderConfig.camera.lookAt);
 const BASE_CAMERA_OFFSET = BASE_CAMERA_POSITION.clone().sub(BASE_LOOK_AT);
 const MIN_CAMERA_ZOOM = 0.62;
 const MAX_CAMERA_ZOOM = 2.4;
@@ -218,7 +225,14 @@ function CameraRig({ dicePositionRef, isDiceDraggingRef, resetKey }: CameraRigPr
   useFrame((_, delta) => {
     const safeDelta = Math.min(delta, 1 / 30);
     const dicePosition = dicePositionRef.current;
-    const diceHeightLift = Math.min(Math.max(dicePosition.y - 0.58, 0), 2.2) * 0.18;
+    const diceHeightLift =
+      Math.min(
+        Math.max(
+          dicePosition.y - physicsWorldConfig.diceInitialPosition[1],
+          0,
+        ),
+        2.2,
+      ) * 0.18;
     const isDiceDragging = isDiceDraggingRef.current;
 
     if (isDiceDragging) {
@@ -388,7 +402,7 @@ function StudioLights({ dicePositionRef }: StudioLightsProps) {
   );
 }
 
-function StudioEnvironment() {
+const StudioEnvironment = memo(function StudioEnvironment() {
   return (
     <Environment
       background={false}
@@ -413,7 +427,7 @@ function StudioEnvironment() {
       ))}
     </Environment>
   );
-}
+});
 
 function ShadowMapController({
   dynamic,
@@ -547,7 +561,9 @@ function RenderMetrics() {
 }
 
 export function Scene({ physicsProfile, resetKey, onThrowStart, onSettle }: SceneProps) {
-  const dicePositionRef = useRef(new THREE.Vector3(0, 0.58, 0));
+  const dicePositionRef = useRef(
+    new THREE.Vector3(...physicsWorldConfig.diceInitialPosition),
+  );
   const isDiceDraggingRef = useRef(false);
   const simulationEpoch = `${physicsProfile.id}:${resetKey}`;
   const [sceneActivity, setSceneActivity] = useState<SceneActivity>({

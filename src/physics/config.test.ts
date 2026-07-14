@@ -3,6 +3,7 @@ import {
   defaultPhysicsProfileId,
   physicsConfig,
   physicsSimulationConfig,
+  physicsWorldConfig,
   physicsProfileIds,
   physicsProfileOptions,
   physicsProfiles,
@@ -51,11 +52,26 @@ describe("physicsProfiles", () => {
     expect(physicsConfig.throw.keyboard.forwardVelocity).toBeGreaterThan(20);
     expect(physicsConfig.throw.keyboard.maxReleaseLinearSpeed).toBe(36);
     expect(physicsConfig.throw.keyboard.maxReleaseAngularSpeed).toBe(18);
+    expect(physicsWorldConfig.diceInitialPosition).toEqual([0, 0.58, 0]);
+    expect(physicsWorldConfig.diceInitialRotationEuler).toEqual([
+      0.1,
+      -0.28,
+      0.18,
+    ]);
+    expect(physicsWorldConfig.openWorldHalfExtent).toBe(1024);
   });
 
   it("uses the selected K profile as the product default", () => {
     expect(defaultPhysicsProfileId).toBe("k");
     expect(physicsConfig).toBe(physicsProfiles.k);
+    expect(physicsConfig.gravity).toEqual([0, -54, 0]);
+    expect(physicsConfig.dice.mass).toBeCloseTo(0.46);
+    expect(physicsConfig.dice.friction).toBeCloseTo(0.74);
+    expect(physicsConfig.dice.restitution).toBeCloseTo(0.3);
+    expect(physicsConfig.dice.linearDamping).toBeCloseTo(0.14);
+    expect(physicsConfig.dice.angularDamping).toBeCloseTo(0.05);
+    expect(physicsConfig.floor.friction).toBeCloseTo(0.7);
+    expect(physicsConfig.floor.restitution).toBeCloseTo(0.23);
   });
 
   it("offers compact unique labels for direct UI comparison", () => {

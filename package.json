@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:balance": "vitest run src/physics/diceBalance.test.ts --reporter=verbose"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",
@@ -19,6 +20,7 @@
     "three": "^0.171.0"
   },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "0.14.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

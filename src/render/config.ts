@@ -1,6 +1,10 @@
 import type { LightSourceConfig } from "./lighting";
 
 export const renderConfig = {
+  camera: {
+    position: [7.1, 5, 8.2] as [number, number, number],
+    lookAt: [0, 0.36, 0] as [number, number, number],
+  },
   canvas: {
     dprRange: [1, 1.5] as [number, number],
   },

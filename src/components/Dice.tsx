@@ -41,6 +41,7 @@ import {
   PhysicsProfile,
   physicsConfig,
   physicsSimulationConfig,
+  physicsWorldConfig,
 } from "../physics/config";
 import { renderConfig } from "../render/config";
 import { createRecessedDiceGeometries } from "../render/diceGeometry";
@@ -69,10 +70,11 @@ type DiceProps = {
 };
 
 const DICE_SIZE = 1.12;
-const HALF = DICE_SIZE / 2;
-const INITIAL_POSITION = new THREE.Vector3(0, HALF + 0.02, 0);
+const INITIAL_POSITION = new THREE.Vector3(
+  ...physicsWorldConfig.diceInitialPosition,
+);
 const INITIAL_ROTATION = new THREE.Quaternion().setFromEuler(
-  new THREE.Euler(0.1, -0.28, 0.18),
+  new THREE.Euler(...physicsWorldConfig.diceInitialRotationEuler),
 );
 
 const pipMaterial = new THREE.MeshPhysicalMaterial({
@@ -845,7 +847,7 @@ export function Dice({
         friction={physicsProfile.dice.friction}
         softCcdPrediction={physicsSimulationConfig.softCcdPrediction}
         position={INITIAL_POSITION.toArray()}
-        rotation={[0.1, -0.28, 0.18]}
+        rotation={physicsWorldConfig.diceInitialRotationEuler}
       >
         <RoundCuboidCollider
           args={[

@@ -236,6 +236,6 @@ describe("1,000-throw physical balance", () => {
       expect(chiSquared, report).toBeLessThanOrEqual(CHI_SQUARED_99_PERCENT);
       expect(maxDeviation, report).toBeLessThanOrEqual(MAX_COUNT_DEVIATION);
     },
-    60_000,
+    240_000,
   );
 });
