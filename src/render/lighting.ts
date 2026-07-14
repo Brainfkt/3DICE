@@ -13,9 +13,12 @@ export type LightSourceConfig = {
   penumbra?: number;
   shadow?: {
     bias: number;
+    far: number;
+    intensity: number;
     mapSize: number;
     near: number;
     normalBias: number;
+    radius: number;
   };
 };
 
@@ -23,13 +26,16 @@ export function getShadowCastingSources(sources: readonly LightSourceConfig[]) {
   return sources.filter((source) => source.castShadow);
 }
 
-export function getLightPosition(
+export function setLightPosition<T extends { set: (x: number, y: number, z: number) => unknown }>(
   target: { x: number; y: number; z: number },
   source: LightSourceConfig,
+  output: T,
 ) {
-  return [
+  output.set(
     target.x + source.offset[0],
-    target.y + source.offset[1],
+    source.offset[1],
     target.z + source.offset[2],
-  ] as [number, number, number];
+  );
+
+  return output;
 }
