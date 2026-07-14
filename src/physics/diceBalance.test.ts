@@ -19,13 +19,13 @@ import {
 import { detectDiceFace } from "../utils/detectDiceFace";
 import { renderConfig } from "../render/config";
 
-const THROW_COUNT = 100;
+const THROW_COUNT = 1_000;
 const FACE_COUNT = 6;
 const EXPECTED_COUNT = THROW_COUNT / FACE_COUNT;
 // Five degrees of freedom at alpha=1%. Combined with the per-face bound below,
-// this rejects roughly 5% of genuinely uniform 100-throw samples.
+// this rejects roughly 5% of genuinely uniform 1,000-throw samples.
 const CHI_SQUARED_99_PERCENT = 15.086;
-const MAX_COUNT_DEVIATION = 10;
+const MAX_COUNT_DEVIATION = 31;
 const BALANCE_SEED = 0x3d1ce;
 const MAX_SETTLE_STEPS = 3_600;
 
@@ -191,7 +191,7 @@ function throwWithSpacePhysics(
   body.setAngvel(limitedMotion.angularVelocity, true);
 }
 
-describe("100-throw physical balance", () => {
+describe("1,000-throw physical balance", () => {
   beforeAll(async () => {
     await RAPIER.init();
   });
@@ -236,6 +236,6 @@ describe("100-throw physical balance", () => {
       expect(chiSquared, report).toBeLessThanOrEqual(CHI_SQUARED_99_PERCENT);
       expect(maxDeviation, report).toBeLessThanOrEqual(MAX_COUNT_DEVIATION);
     },
-    30_000,
+    60_000,
   );
 });
