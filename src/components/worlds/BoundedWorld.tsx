@@ -3,8 +3,8 @@ import { useFrame } from "@react-three/fiber";
 import { useCallback, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { PhysicsProfile } from "../../physics/config";
-import { renderConfig } from "../../render/config";
-import { createFloorTextureData } from "../../render/floorTexture";
+import { FloorSurface } from "../Floor";
+import { SurfaceTheme } from "../../settings/config";
 
 // Dormant world type kept from the bounded-arena iteration.
 // It is not mounted now, but can be reused later if the app exposes selectable world types.
@@ -25,6 +25,7 @@ type BoundaryPulseMeshProps = {
 
 type BoundedWorldProps = {
   physicsProfile: PhysicsProfile;
+  surface: SurfaceTheme;
 };
 
 const boundaryPulseVertexShader = `
@@ -168,7 +169,7 @@ function getCollisionPoint(
   }
 }
 
-export function BoundedWorld({ physicsProfile }: BoundedWorldProps) {
+export function BoundedWorld({ physicsProfile, surface }: BoundedWorldProps) {
   const pulseId = useRef(0);
   const [pulses, setPulses] = useState<BoundaryPulse[]>([]);
   const floor = physicsProfile.floor;
@@ -198,36 +199,6 @@ export function BoundedWorld({ physicsProfile }: BoundedWorldProps) {
   const removeBoundaryPulse = useCallback((id: number) => {
     setPulses((current) => current.filter((pulse) => pulse.id !== id));
   }, []);
-  const floorTexture = useMemo(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = renderConfig.floorTexture.size;
-    canvas.height = renderConfig.floorTexture.size;
-    const context = canvas.getContext("2d");
-
-    if (context) {
-      const imageData = context.createImageData(canvas.width, canvas.height);
-      imageData.data.set(createFloorTextureData({
-        seed: renderConfig.floorTexture.seed,
-        width: canvas.width,
-        height: canvas.height,
-        baseValue: renderConfig.floorTexture.baseValue,
-        variation: renderConfig.floorTexture.variation,
-        fiberStrength: renderConfig.floorTexture.fiberStrength,
-        speckleStrength: renderConfig.floorTexture.speckleStrength,
-      }));
-      context.putImageData(imageData, 0, 0);
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(renderConfig.floorTexture.repeat, renderConfig.floorTexture.repeat);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-    texture.needsUpdate = true;
-    return texture;
-  }, []);
-
   return (
     <RigidBody
       type="fixed"
@@ -276,15 +247,7 @@ export function BoundedWorld({ physicsProfile }: BoundedWorldProps) {
         restitution={floor.restitution}
         friction={floor.friction}
       />
-      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[size, size, 96, 96]} />
-        <meshStandardMaterial
-          color={renderConfig.palette.floor}
-          map={floorTexture}
-          roughness={0.96}
-          metalness={0}
-        />
-      </mesh>
+      <FloorSurface repeat={Math.max(Math.round(size / 2), 1)} size={size} surface={surface} />
       {pulses.map((pulse) => (
         <BoundaryPulseMesh
           key={pulse.id}
