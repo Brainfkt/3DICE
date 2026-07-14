@@ -58,7 +58,6 @@ import { DiceTypeId } from "../settings/config";
 import {
   detectDieFace,
   getPolyhedralDieDefinition,
-  PolyhedralDieDefinition,
 } from "../render/polyhedralDice";
 
 type DiceProps = {
@@ -93,86 +92,6 @@ const diceGeometries = createRecessedDiceGeometries({
   ...renderConfig.diceGeometry,
   size: DICE_SIZE,
 });
-
-const labelTextureCache = new Map<string, THREE.CanvasTexture>();
-
-function getLabelTexture(value: number, color: string) {
-  const key = `${value}:${color}`;
-  const cached = labelTextureCache.get(key);
-  if (cached) return cached;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas 2D is required for polyhedral labels");
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = color;
-  context.font = "600 68px Inter, system-ui, sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(String(value), 64, 67);
-  if (value === 6 || value === 9) {
-    context.fillRect(49, 101, 30, 3);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 2;
-  texture.needsUpdate = true;
-  labelTextureCache.set(key, texture);
-  return texture;
-}
-
-function PolyhedralLabels({
-  color,
-  definition,
-}: {
-  color: string;
-  definition: PolyhedralDieDefinition;
-}) {
-  const labelTransforms = useMemo(
-    () =>
-      definition.faces.map((face) => ({
-        position: face.center
-          .clone()
-          .addScaledVector(face.localNormal, 0.006),
-        quaternion: new THREE.Quaternion().setFromUnitVectors(
-          new THREE.Vector3(0, 0, 1),
-          face.localNormal,
-        ),
-        texture: getLabelTexture(face.value, color),
-        value: face.value,
-      })),
-    [color, definition],
-  );
-
-  return (
-    <>
-      {labelTransforms.map((label) => (
-        <mesh
-          key={label.value}
-          position={label.position}
-          quaternion={label.quaternion}
-          renderOrder={2}
-          scale={definition.labelScale}
-        >
-          <planeGeometry args={[1, 1]} />
-          <meshBasicMaterial
-            alphaTest={0.18}
-            depthWrite={false}
-            map={label.texture}
-            polygonOffset
-            polygonOffsetFactor={-2}
-            toneMapped={false}
-            transparent
-          />
-        </mesh>
-      ))}
-    </>
-  );
-}
 
 type BodyMotionLimits = {
   releaseLinearSoftLimit: number;
@@ -1109,20 +1028,14 @@ export function Dice({
               <mesh
                 castShadow
                 receiveShadow
-                geometry={polyhedralDefinition.geometry}
+                geometry={polyhedralDefinition.bodyGeometry}
                 material={diceMaterial}
               />
-              <lineSegments renderOrder={1}>
-                <edgesGeometry args={[polyhedralDefinition.geometry, 24]} />
-                <lineBasicMaterial
-                  color={appearance.pipColor}
-                  opacity={0.28}
-                  transparent
-                />
-              </lineSegments>
-              <PolyhedralLabels
-                color={appearance.pipColor}
-                definition={polyhedralDefinition}
+              <mesh
+                castShadow
+                receiveShadow
+                geometry={polyhedralDefinition.engravingGeometry}
+                material={pipMaterial}
               />
             </>
           ) : (

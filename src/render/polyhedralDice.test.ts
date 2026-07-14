@@ -46,6 +46,19 @@ function getPlanarFaceAreas(type: Exclude<DiceTypeId, "d6">) {
   return areas;
 }
 
+function expectCompleteGeometry(geometry: THREE.BufferGeometry) {
+  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
+  const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+
+  expect(position.count).toBeGreaterThan(0);
+  expect(normal.count).toBe(position.count);
+  expect(uv.count).toBe(position.count);
+  for (const attribute of [position, normal, uv]) {
+    expect(Array.from(attribute.array).every(Number.isFinite)).toBe(true);
+  }
+}
+
 describe("polyhedral dice", () => {
   it.each(polyhedralTypes)("creates a convex labelled %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
@@ -54,6 +67,21 @@ describe("polyhedral dice", () => {
     expect(definition.colliderVertices.length % 3).toBe(0);
     expect(getDieInitialHeight(type)).toBeGreaterThan(0.5);
     expect(definition.geometry.getAttribute("position").count).toBeGreaterThan(0);
+  });
+
+  it.each(polyhedralTypes)("uses textured body UVs and recessed numerals on %s", (type) => {
+    const definition = getPolyhedralDieDefinition(type)!;
+    expectCompleteGeometry(definition.bodyGeometry);
+    expectCompleteGeometry(definition.engravingGeometry);
+    expect(definition.engravingMetrics).toHaveLength(definition.faces.length);
+
+    for (const metric of definition.engravingMetrics) {
+      expect(metric.surfacePlane - metric.bottomPlane).toBeCloseTo(0.022, 5);
+      expect(metric.glyphHeight).toBeGreaterThan(0.14);
+      expect(metric.glyphHeight).toBeLessThanOrEqual(definition.labelHeight + 1e-6);
+      expect(metric.glyphWidth).toBeGreaterThan(0.03);
+      expect(metric.contourCount).toBeGreaterThan(0);
+    }
   });
 
   it.each(polyhedralTypes)("detects every labelled face of %s", (type) => {

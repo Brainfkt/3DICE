@@ -1,19 +1,27 @@
 import * as THREE from "three";
 import { DiceTypeId } from "../settings/config";
 import { DiceRotation, detectDiceFace } from "../utils/detectDiceFace";
+import {
+  createEngravedPolyhedralGeometries,
+  EngravingMetric,
+} from "./polyhedralEngraving";
 
 export type PolyhedralFace = {
   center: THREE.Vector3;
   localNormal: THREE.Vector3;
   value: number;
+  vertices: readonly THREE.Vector3[];
 };
 
 export type PolyhedralDieDefinition = {
+  bodyGeometry: THREE.BufferGeometry;
   colliderVertices: Float32Array;
+  engravingGeometry: THREE.BufferGeometry;
+  engravingMetrics: readonly EngravingMetric[];
   faces: readonly PolyhedralFace[];
   geometry: THREE.BufferGeometry;
   initialHeight: number;
-  labelScale: number;
+  labelHeight: number;
 };
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -37,6 +45,72 @@ function uniqueVertices(geometry: THREE.BufferGeometry) {
   return new Float32Array(values);
 }
 
+function uniquePointList(points: readonly THREE.Vector3[]) {
+  const seen = new Set<string>();
+  return points.filter((point) => {
+    const key = `${point.x.toFixed(5)}:${point.y.toFixed(5)}:${point.z.toFixed(5)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getConvexFaceVertices(
+  points: readonly THREE.Vector3[],
+  normal: THREE.Vector3,
+) {
+  const unique = uniquePointList(points);
+  const center = unique
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .multiplyScalar(1 / unique.length);
+  const reference = Math.abs(normal.y) < 0.88
+    ? new THREE.Vector3(0, 1, 0)
+    : new THREE.Vector3(0, 0, 1);
+  const axisU = new THREE.Vector3().crossVectors(reference, normal).normalize();
+  const axisV = new THREE.Vector3().crossVectors(normal, axisU).normalize();
+  const projected = unique
+    .map((point) => {
+      const relative = point.clone().sub(center);
+      return {
+        point,
+        x: relative.dot(axisU),
+        y: relative.dot(axisV),
+      };
+    })
+    .sort((left, right) => left.x - right.x || left.y - right.y);
+  const cross = (
+    origin: (typeof projected)[number],
+    left: (typeof projected)[number],
+    right: (typeof projected)[number],
+  ) =>
+    (left.x - origin.x) * (right.y - origin.y) -
+    (left.y - origin.y) * (right.x - origin.x);
+  const lower: typeof projected = [];
+  for (const point of projected) {
+    while (
+      lower.length >= 2 &&
+      cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0
+    ) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+  const upper: typeof projected = [];
+  for (let index = projected.length - 1; index >= 0; index -= 1) {
+    const point = projected[index];
+    while (
+      upper.length >= 2 &&
+      cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0
+    ) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper].map((entry) => entry.point.clone());
+}
+
 function extractPlanarFaces(geometry: THREE.BufferGeometry) {
   const nonIndexed = geometry.index ? geometry.toNonIndexed() : geometry.clone();
   const position = nonIndexed.getAttribute("position");
@@ -45,6 +119,7 @@ function extractPlanarFaces(geometry: THREE.BufferGeometry) {
     count: number;
     normal: THREE.Vector3;
     plane: number;
+    points: THREE.Vector3[];
   }> = [];
 
   const a = new THREE.Vector3();
@@ -74,12 +149,14 @@ function extractPlanarFaces(geometry: THREE.BufferGeometry) {
     if (group) {
       group.center.add(center);
       group.count += 1;
+      group.points.push(a.clone(), b.clone(), c.clone());
     } else {
       groups.push({
         center: center.clone(),
         count: 1,
         normal: normal.clone(),
         plane,
+        points: [a.clone(), b.clone(), c.clone()],
       });
     }
   }
@@ -87,10 +164,16 @@ function extractPlanarFaces(geometry: THREE.BufferGeometry) {
   nonIndexed.dispose();
 
   return groups
-    .map((group) => ({
-      center: group.center.multiplyScalar(1 / group.count),
-      localNormal: group.normal,
-    }))
+    .map((group) => {
+      const vertices = getConvexFaceVertices(group.points, group.normal);
+      return {
+        center: vertices
+          .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+          .multiplyScalar(1 / vertices.length),
+        localNormal: group.normal,
+        vertices,
+      };
+    })
     .sort((left, right) => {
       const leftAngle = Math.atan2(left.center.z, left.center.x);
       const rightAngle = Math.atan2(right.center.z, right.center.x);
@@ -158,22 +241,32 @@ function createDefinition(type: Exclude<DiceTypeId, "d6">) {
 
   geometry.computeBoundingSphere();
   const initialHeight = (geometry.boundingSphere?.radius ?? 0.7) + 0.035;
-  const labelScale = type === "d20"
-    ? 0.17
+  const labelHeight = type === "d20"
+    ? 0.27
     : type === "d12"
-      ? 0.2
+      ? 0.3
       : type === "d10"
-        ? 0.22
+        ? 0.32
         : type === "d8"
-          ? 0.24
-          : 0.27;
+          ? 0.32
+          : 0.34;
+  const faces = rawFaces.map((face, index) => ({ ...face, value: index + 1 }));
+  const engraved = createEngravedPolyhedralGeometries({
+    depth: 0.022,
+    faces,
+    margin: 0.018,
+    requestedHeight: labelHeight,
+  });
 
   return {
+    bodyGeometry: engraved.body,
     colliderVertices: uniqueVertices(geometry),
-    faces: rawFaces.map((face, index) => ({ ...face, value: index + 1 })),
+    engravingGeometry: engraved.engraving,
+    engravingMetrics: engraved.metrics,
+    faces,
     geometry,
     initialHeight,
-    labelScale,
+    labelHeight,
   } satisfies PolyhedralDieDefinition;
 }
 

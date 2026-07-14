@@ -13,7 +13,7 @@
 - Icon-only Reset control that restores every die and the camera state immediately.
 - Deterministic face detection for each die, plus the total for multi-dice throws.
 - A progressive advanced mode for physical sounds, optional haptics, contact feedback, throw power, session history and camera gestures.
-- Advanced `d4`, `d8`, `d10`, `d12` and `d20` meshes with convex colliders and labelled face detection; standard mode stays on `d6`.
+- Advanced `d4`, `d8`, `d10`, `d12` and `d20` meshes with convex colliders, large physically recessed numerals and labelled face detection; standard mode stays on `d6`.
 - Per-die locking after a multi-dice result. Locked dice form a visible, non-colliding side row while the others are rerolled.
 - Local PBR presets for die material, floor, background and lighting, without remote assets or post-processing.
 - Responsive contextual help that fades after a throw and returns after ten idle seconds.
@@ -102,6 +102,7 @@ src/
     floorTexture.ts
     ivoryTexture.ts
     polyhedralDice.ts
+    polyhedralEngraving.ts
     performance.ts
   settings/
     config.ts
@@ -124,7 +125,7 @@ Because the physics world is paused at rest, the collider mass properties are sy
 
 Pressing Space or tapping the open canvas on a touch/pen device launches every configured die through the same point-velocity, off-center impulse and capped torque path, with dedicated keyboard power limits. A touch launch accepts only a short primary tap, so drag, long press, pinch and mouse click do not create accidental duplicate throws. Each impulse point is reconstructed above its die in world space, so arbitrary settled faces still produce a high forward arc and a consistent natural forward roll. With one die, an active throw still blocks stacking another impulse. With several dice, drag is disabled and every launch atomically restores the initial formation before throwing the full group again; this prevents accumulated drift from making the camera chase an increasingly distant cluster. Key repeat and inputs remain ignored.
 
-The d6 balance regression test uses the same gravity, rounded collider, mass, floor contacts, Space impulse and settle detection as the application. It simulates 1,000 consecutive throws with a fixed seed and recenters the settled die horizontally between throws; that translation is neutral on the homogeneous open floor and keeps the headless test numerically stable. It then requires both a Pearson chi-squared score below the 99% rejection threshold and every face count to remain within `31` of the expected `166.67`. The advanced polyhedra additionally test every labelled face, convex collider data and equal landing-face areas. These are deterministic bias guards, not a mathematical proof that a finite sample is perfectly uniform.
+The d6 balance regression test uses the same gravity, rounded collider, mass, floor contacts, Space impulse and settle detection as the application. It simulates 1,000 consecutive throws with a fixed seed and recenters the settled die horizontally between throws; that translation is neutral on the homogeneous open floor and keeps the headless test numerically stable. It then requires both a Pearson chi-squared score below the 99% rejection threshold and every face count to remain within `31` of the expected `166.67`. The advanced polyhedra additionally test every labelled face, convex collider data, equal landing-face areas, finite UVs and the geometry/depth of their numeral cavities. These are deterministic bias guards, not a mathematical proof that a finite sample is perfectly uniform.
 
 ## Camera and World
 
@@ -138,11 +139,11 @@ Appearance, surface, dice count and advanced preferences are stored in a version
 
 `src/utils/detectDiceFace.ts` defines local face normals for the die. After the simulation becomes stable, each normal is transformed by the die rotation. The face whose transformed normal is most aligned with the world up axis is reported as the final result.
 
-The d6 detection logic is covered by `src/utils/detectDiceFace.test.ts`, polyhedral detection and geometry by `src/render/polyhedralDice.test.ts`, and settle behavior by `src/physics/dicePhysics.test.ts`.
+The d6 detection logic is covered by `src/utils/detectDiceFace.test.ts`, polyhedral detection and geometry by `src/render/polyhedralDice.test.ts`, numeral cavities by `src/render/polyhedralEngraving.test.ts`, and settle behavior by `src/physics/dicePhysics.test.ts`.
 
 ## Render and Performance
 
-The render path uses native Three.js PBR lighting and shadows without post-processing. The d6 has an indexed rounded shell with 21 physically concave pips; polyhedral dice use compact native geometries and local number textures. Deterministic albedo, roughness and normal maps give the selected die and floor their microstructure. One inverse-square studio light casts the moving shadow; a tighter contact shadow is calculated only for the static state. Three local light cards build the reflection environment once, without loading a remote HDR. The default device-pixel ratio is capped at `1.5`. The maximum four-`d20` diagnostic at mobile DPR 2 measured `60fps`, `16.67ms` average, `19ms` worst frame and about `90` draw calls.
+The render path uses native Three.js PBR lighting and shadows without post-processing. The d6 has an indexed rounded shell with 21 physically concave pips. Every polyhedral face now has planar UVs and uses the same physical material, albedo, roughness and normal maps as the d6. Its bold vector numeral is cut into the body as a closed cavity with an ivory bevel and a recessed pip-material bottom; it is geometry rather than an unlit texture laid over the face. One inverse-square studio light casts the moving shadow; a tighter contact shadow is calculated only for the static state. Three local light cards build the reflection environment once, without loading a remote HDR. The default device-pixel ratio is capped at `1.5`. The maximum four-`d20` diagnostic at mobile DPR 2 measured `59.99fps`, `16.67ms` average, `19ms` worst frame, `10` draw calls and `18,924` triangles after warm-up.
 
 The Canvas renders on demand and Rapier follows that render loop instead of keeping an independent animation callback. A small active-frame driver discards the stale clock delta when the scene wakes, then runs only from grab through settle; Rapier is paused afterward. Drag, throw, camera easing, wheel/pinch zoom, Reset and shadow refreshes explicitly request the frames they need, so an idle scene performs no WebGL draws, physics steps or animation-frame callbacks. Optional performance instrumentation can be enabled with query parameters:
 
