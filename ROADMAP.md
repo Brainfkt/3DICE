@@ -37,7 +37,7 @@ Valeurs retenues 2026-06-27 :
 - Sol : friction `0.92`, restitution `0.14`, collider cuboide fin `0.08` sous la surface visible pour eviter le passage a travers un plan sans epaisseur.
 - Lancer : vitesse cible au point attrape, impulsion `applyImpulseAtPoint`, `pointImpulseScale` `0.88`, delta vitesse max `6.5`, impulsion max `3.2`, impulsion de poignet max `0.72`.
 - Decision : le couple principal vient du point de prise et du bras de levier Rapier ; la petite impulsion de poignet ne sert qu'a eviter les lancers trop morts lors d'une prise tres centree.
-- Stabilisation : vitesse lineaire `< 0.055`, vitesse angulaire `< 0.13`, `framesRequired` `44`, `stableFaceFramesRequired` `18`. Decision : ne pas utiliser `onSleep` pour le resultat final pour l'instant, car la stabilisation par seuils + face stable est deterministe, testable, et ne depend pas du timing de sommeil moteur.
+- Stabilisation : vitesse lineaire `< 0.055`, vitesse angulaire `< 0.13`, `framesRequired` `54`, `stableFaceFramesRequired` `22` (environ `450ms` / `180ms` a `120Hz`). Decision : ne pas utiliser `onSleep` pour le resultat final pour l'instant, car la stabilisation par seuils + face stable est deterministe, testable, et ne depend pas du timing de sommeil moteur.
 - Limites invisibles : demi-plateau `7.2`, murs hauteur `5.6`, epaisseur `0.38`, plafond epaisseur `0.14`.
 - Camera : position de base revisee `[7.1, 5.0, 8.2]` pour rendre les details PBR lisibles, suivi amorti leger via ref mutable pour eviter des re-renders React pendant la simulation.
 - Feedback mur/plafond : ripple shader localise au point de contact et aligne sur le plan de la limite touchee, duree `0.38`, rouge clair `vec3(0.95, 0.08, 0.055)` puis fondu transparent.
@@ -174,10 +174,48 @@ Ces points ne doivent pas passer avant les priorites 1 et 2.
 Ces points ne doivent pas transformer la demo en dashboard.
 
 - [ ] Micro-indication de prise pendant le drag, si elle reste elegante et non intrusive.
-- [ ] Animation subtile du resultat final.
-- [ ] Aide contextuelle plus claire sur mobile.
+- [x] Aide contextuelle plus claire sur mobile.
 - [ ] Meilleur feedback du bouton Reset.
 - [x] Eventuel panneau compact de reglages, cache par defaut, apres stabilisation de la physique.
+
+## Mode avance
+
+Principe produit : le mode standard conserve uniquement le resultat, Reset, Reglages et l'aide de lancer. Un interrupteur `Mode avance` dans la modale de reglages revele les options supplementaires et un HUD contextuel tres compact. Aucune option avancee, historique ou indicateur ne doit apparaitre dans le HUD standard. Le mode avance doit rester une couche progressive, jamais un dashboard.
+
+### Fondations du mode
+
+- [x] Ajouter l'interrupteur `Mode avance` dans la modale, avec une description courte de ce qu'il revele.
+- [x] Organiser la modale avancee en sections concises : apparence, des, lancer, retours et camera ; aucun panneau persistant hors du HUD avance.
+- [x] Limiter le HUD avance aux informations utiles a l'action courante : resultat/somme, des verrouilles, puissance active et historique recent. Le masquer integralement en mode standard.
+- [x] Verifier desktop, mobile et tablette : les options restent dans la modale et ne masquent ni le canvas ni les commandes essentielles.
+
+### Retours physiques et resultat
+
+- [x] Ajouter des sons de prise, lancer, rebonds et resultat, sobres et lies a l'interaction utilisateur ; prevoir une option son dans le mode avance.
+- [x] Adapter les sons d'impact a la matiere du de et au plateau, sans multiplier les sources audio simultanees.
+- [x] Ajouter une vibration haptique mobile optionnelle dans le mode avance : impacts limites et resultat final, avec repli silencieux si l'API est indisponible.
+- [x] Ajouter un effet de contact tres leger (poussiere/variation d'ombre) seulement si le budget rendu reste respecte ; l'effet doit suivre la matiere et ne jamais masquer le de.
+- [x] Rendre la detection d'immobilisation et l'apparition du resultat plus naturelles, sans perdre la stabilite ni la reproductibilite de la detection de face.
+- [x] Ajouter une animation de resultat finale courte et discrete, compatible avec la somme de plusieurs des et desactivable avec la reduction des animations.
+- [x] Afficher un historique de session compact des derniers lancers dans le HUD avance seulement, sans statistiques, et desactive par defaut.
+
+### Apparence et ambiance
+
+- [x] Etendre les presets de finition du de (ivoire, obsidienne, metal brosse, marbre, translucide) dans la section apparence avancee, en gardant un rendu PBR natif et performant.
+- [x] Ajouter des presets de plateau sobres (feutre, bois sombre, pierre, verre depoli) et de fond, sans textures distantes.
+- [x] Ajouter des ambiances d'eclairage sobres (studio clair, table chaude, nuit neon tres legere), avec un budget de rendu mesure pour chacune.
+
+### Camera et commandes
+
+- [x] Recentrer automatiquement la camera apres stabilisation quand le ou les des se sont eloignes, sans annuler le cadrage intentionnel de l'utilisateur.
+- [x] En mode avance, ajouter zoom au pincement sur mobile et rotation a un doigt uniquement hors interaction avec un de ; conserver drag/lancer prioritaire et tester les conflits de gestes.
+- [x] Ajouter les raccourcis : `Espace` lancer, `R` Reset, `F` plein ecran ; les ignorer dans les champs editables et les documenter dans l'aide du mode avance.
+- [x] Ajouter un controle de puissance du lancer clavier dans le mode avance uniquement, avec une plage bornee, des valeurs physiques centralisees dans `src/physics/config.ts` et des tests de stabilite/equilibre.
+
+### Des et lancers avances
+
+- [x] Ajouter le verrouillage d'un de apres stabilisation afin de relancer uniquement les autres ; le controle n'apparait que dans le HUD avance, avec au moins deux des, et n'interrompt jamais une simulation en cours. Les des bloques sont ranges lateralement en ligne, restent visibles et deviennent non collisionnels pendant la relance.
+- [x] Ajouter dans le mode avance les des `d4`, `d8`, `d10`, `d12` et `d20`, apres validation individuelle de leurs mesh/colliders, detection de face, distribution des resultats et performances. Le d6 reste le seul de du mode standard.
 
 ## Definition of Done par iteration
 
@@ -229,3 +267,7 @@ Ajouter les notes courtes ici, dans l'ordre chronologique.
 - 2026-07-14 : premiere etape de personnalisation tardive dans un panneau compact replie par defaut : 4 finitions de de, 4 ambiances sol/fond, monde ouvert ou borne via `BoundedWorld`, et 1 a 4 des. Espace lance le groupe, chaque de reste draggable, les faces sont suivies individuellement et la camera cadre le centre puis la dispersion du groupe. Cette etape est remplacee par la decision produit de l'entree suivante. Reglages sauvegardes automatiquement en `localStorage` avec schema `v1` ; pas d'export, sans besoin de partage dans cette demo locale. Validation : `npm run build`, `npm run test` (`85` tests), Playwright desktop/mobile 390x844, open/bounded, apparence/plateau, lancer groupe, drag individuel, Reset, reload persistant et console propre. Cas maximal mobile DPR 2 : `59.86fps`, `16.71ms`, `10` appels, `23196` triangles ; bundle final `1080.03 kB` gzip.
 - 2026-07-14 : comportement multi-des simplifie apres decision utilisateur : monde ouvert unique et choix open/bounded retire (schema local `v2`, anciens reglages migres), `BoundedWorld` conserve dormant en commentaire, drag autorise seulement avec un de, somme affichee, Reset replace comme icone a cote des reglages. Avec plusieurs des, chaque pression Espace execute atomiquement retour a la formation initiale puis relance, y compris apres derive lointaine. Le suivi camera est desormais identique pendant le drag mono-de et le lancer Espace, sans gel pendant la prise. Validation : `npm run build`, `npm run test` (`88` tests), Vite + Playwright desktop/mobile 390x844 ; drag multi inerte, drag mono actif et suivi au centre, relances multi depuis les coordonnees initiales, somme correcte, Reset, panneau sans monde et console sans erreur/warning. Bundle `1079.20 kB` gzip.
 - 2026-07-14 : Reset visuel resynchronise avec Rapier en remontant uniquement les corps lors d'un Reset explicite. Cause : la translation physique revenait bien a la pose initiale, mais la simulation mise en pause pouvait laisser le mesh Three sur l'ancienne transform lointaine. Les relances multi Espace gardent leurs corps montes et restent atomiques. Validation : `npm run build`, `npm run test` (`88` tests), Playwright desktop/mobile ; mono-de lance a `(-13.04, -13.95)` puis recadre exactement la pose initiale `(0, 0.58, 0)`, formation quatre des centree, seconde relance Espace toujours issue de la position initiale, console sans erreur/warning applicatif.
+- 2026-07-14 : aide de lancer responsive simplifiee : mention de sauvegarde retiree du panneau, desktop avec keycap Espace translucide (`Glissez puis relachez ou Espace` / `Espace pour (re)lancer`), mobile/tablette avec consigne tactile adaptee au nombre de des. Un tap primaire touch/pen court (`<=14px`, `<=450ms`) reutilise le lancer clavier ; drag, appui long, pinch et clic souris sont ignores. L'aide fond apres chaque lancer et reapparait apres `10s` sans nouveau lancer. Validation : `npm run build`, `npm run test` (`91` tests), Playwright desktop 1280x720, mobile 390x844 et tablette 820x1180 ; tap mono/multi, absence de double lancer sur le de, fade puis retour a `10s`, panneau sans mention de sauvegarde et console applicative propre. Bundle `1079.60 kB` gzip.
+- 2026-07-14 : feuille de route enrichie a la demande utilisateur : sons, haptiques, ambiances, retours de contact, camera, historique, raccourcis, verrouillage et des polyedriques sont regroupes dans un futur mode avance. Decision produit : le mode standard conserve le HUD minimal ; le toggle de la modale active les reglages et le HUD avances, avec les types de des et le reglage de puissance reserves a ce mode. Validation : revue documentaire de la roadmap, aucune modification de runtime.
+- 2026-07-14 : mode avance livre sans dependance supplementaire : modale progressive et HUD contextuel, sons Web Audio adaptes aux materiaux, haptiques limites avec repli silencieux, impulsions de contact colorees par le plateau, historique de session optionnel, animation de resultat, raccourcis `R/F`, puissance Espace bornee `0.65-1.35`, gestes camera, quatre finitions et quatre plateaux supplementaires, trois ambiances. La stabilisation passe a `54/22` frames (`~450/180ms`) et preserve la detection deterministe. Validation : `npm run build`, `npm run test` (`111` tests), equilibre d6 `chi2=4.46` / ecart max `15.33`, desktop/mobile/tablette, drag suivi, Reset, modal, historique, puissance, pinch/orbite/recentrage, plein ecran, simulation haptique et console propre. Bundle `1086.90 kB` gzip.
+- 2026-07-14 : des avances `d4/d8/d10/d12/d20` ajoutes avec meshes locaux, colliders convexes, labels et detection exhaustive ; egalite des aires de faces testee pour reduire les biais geometriques. Lancers manuels valides sur chaque type (`4/2/9/6/1`). Cas maximal quatre `d20` mobile DPR 2 : `60fps`, `16.67ms` moyen, pire frame `19ms`, environ `90` draw calls. Verrouillage multi-des complete : les des bloques deviennent des capteurs sans collision et suivent le centre des des relancables dans une rangee laterale responsive ; valeurs conservees et dernier de toujours relancable. `npm run dev`/`preview` exposent maintenant Vite sur le LAN (`0.0.0.0`) pour tester sur telephone ; URL reseau verifiee le jour du test : `http://192.168.1.45:5175/`.
