@@ -36,14 +36,13 @@ import {
   LightSourceConfig,
   setLightPosition,
 } from "../render/lighting";
-import { BoundedWorld } from "./worlds/BoundedWorld";
 import {
   DiceAppearance,
   DiceCount,
   SurfaceTheme,
-  WorldType,
 } from "../settings/config";
 import {
+  getDiceSpaceThrowMode,
   getSpaceThrowKeyAction,
   SPACE_THROW_BLOCKED_TARGET_SELECTOR,
 } from "../input/keyboardThrow";
@@ -55,7 +54,6 @@ type SceneProps = {
   resetKey: number;
   surface: SurfaceTheme;
   uiRevision: number;
-  worldType: WorldType;
   onThrowStart: (diceIndex: number) => void;
   onSettle: (diceIndex: number, face: number) => void;
 };
@@ -152,7 +150,7 @@ type CameraRigProps = {
   dicePositionRef: MutableRefObject<THREE.Vector3>;
   diceSpreadRef: MutableRefObject<number>;
   isDiceDraggingRef: MutableRefObject<boolean>;
-  resetKey: number;
+  resetKey: number | string;
 };
 
 function CameraRig({
@@ -571,6 +569,7 @@ function DiceCenterTracker({
 function DiceInstance({
   appearance,
   diceIndex,
+  dragEnabled,
   keyboardThrowKey,
   onDragChange,
   onSettle,
@@ -583,6 +582,7 @@ function DiceInstance({
 }: {
   appearance: DiceAppearance;
   diceIndex: number;
+  dragEnabled: boolean;
   keyboardThrowKey: number;
   onDragChange: (diceIndex: number, dragging: boolean) => void;
   onSettle: (diceIndex: number, face: number) => void;
@@ -590,7 +590,7 @@ function DiceInstance({
   physicsDebugEnabled: boolean;
   physicsProfile: PhysicsProfile;
   positionRef: MutableRefObject<THREE.Vector3>;
-  resetKey: number;
+  resetKey: number | string;
   transform: DiceTransform;
 }) {
   const handleDragChange = useCallback(
@@ -609,6 +609,7 @@ function DiceInstance({
   return (
     <Dice
       appearance={appearance}
+      dragEnabled={dragEnabled}
       initialPosition={transform.position}
       initialRotation={transform.rotation}
       keyboardThrowKey={keyboardThrowKey}
@@ -699,7 +700,6 @@ export function Scene({
   resetKey,
   surface,
   uiRevision,
-  worldType,
   onThrowStart,
   onSettle,
 }: SceneProps) {
@@ -719,8 +719,12 @@ export function Scene({
   const isAnyDiceDraggingRef = useRef(false);
   const activeDiceIdsRef = useRef(new Set<number>());
   const draggingDiceIdsRef = useRef(new Set<number>());
+  const pendingMultiDiceRelaunchRef = useRef(false);
+  const pendingMultiDiceRelaunchFrameRef = useRef<number | null>(null);
   const [keyboardThrowKey, setKeyboardThrowKey] = useState(0);
-  const simulationEpoch = `${physicsProfile.id}:${worldType}:${diceCount}:${resetKey}`;
+  const [multiDiceResetKey, setMultiDiceResetKey] = useState(0);
+  const diceResetKey = `${resetKey}:${multiDiceResetKey}`;
+  const simulationEpoch = `${physicsProfile.id}:${diceCount}:${diceResetKey}`;
   const [sceneActivity, setSceneActivity] = useState<SceneActivity>({
     active: false,
     epoch: simulationEpoch,
@@ -751,8 +755,9 @@ export function Scene({
     isAnyDiceDraggingRef.current = false;
     diceCenterRef.current.set(0, 0, 0);
 
-    for (const positionRef of dicePositionRefs) {
-      diceCenterRef.current.add(positionRef.current);
+    for (let index = 0; index < dicePositionRefs.length; index += 1) {
+      dicePositionRefs[index].current.set(...diceTransforms[index].position);
+      diceCenterRef.current.add(dicePositionRefs[index].current);
     }
 
     diceCenterRef.current.multiplyScalar(1 / dicePositionRefs.length);
@@ -764,11 +769,43 @@ export function Scene({
         diceCenterRef.current.distanceTo(positionRef.current),
       );
     }
-  }, [dicePositionRefs, simulationEpoch]);
+  }, [dicePositionRefs, diceTransforms, simulationEpoch]);
+
+  useEffect(() => {
+    if (pendingMultiDiceRelaunchFrameRef.current !== null) {
+      cancelAnimationFrame(pendingMultiDiceRelaunchFrameRef.current);
+      pendingMultiDiceRelaunchFrameRef.current = null;
+    }
+    pendingMultiDiceRelaunchRef.current = false;
+  }, [diceCount, physicsProfile.id, resetKey]);
 
   useEffect(() => {
     refreshStaticShadow();
-  }, [refreshStaticShadow, resetKey]);
+  }, [refreshStaticShadow, multiDiceResetKey, resetKey]);
+
+  useEffect(() => {
+    if (!pendingMultiDiceRelaunchRef.current) return;
+
+    const frameId = requestAnimationFrame(() => {
+      pendingMultiDiceRelaunchFrameRef.current = null;
+      if (!pendingMultiDiceRelaunchRef.current) return;
+
+      pendingMultiDiceRelaunchRef.current = false;
+      activeDiceIdsRef.current = new Set(
+        Array.from({ length: diceCount }, (_, index) => index),
+      );
+      setIsSceneActive(true);
+      setKeyboardThrowKey((value) => value + 1);
+    });
+    pendingMultiDiceRelaunchFrameRef.current = frameId;
+
+    return () => {
+      if (pendingMultiDiceRelaunchFrameRef.current === frameId) {
+        cancelAnimationFrame(frameId);
+        pendingMultiDiceRelaunchFrameRef.current = null;
+      }
+    };
+  }, [diceCount, multiDiceResetKey, setIsSceneActive]);
 
   const handleDiceDragChange = useCallback((diceIndex: number, dragging: boolean) => {
     if (dragging) {
@@ -812,7 +849,26 @@ export function Scene({
       if (action === "ignore") return;
       event.preventDefault();
 
-      if (action !== "throw" || activeDiceIdsRef.current.size > 0) return;
+      if (action !== "throw") return;
+
+      const throwMode = getDiceSpaceThrowMode({
+        diceCount,
+        hasActiveDice: activeDiceIdsRef.current.size > 0,
+      });
+
+      if (throwMode === "blocked") return;
+
+      if (throwMode === "reset-and-throw") {
+        if (pendingMultiDiceRelaunchRef.current) return;
+
+        pendingMultiDiceRelaunchRef.current = true;
+        activeDiceIdsRef.current.clear();
+        draggingDiceIdsRef.current.clear();
+        isAnyDiceDraggingRef.current = false;
+        setIsSceneActive(false);
+        setMultiDiceResetKey((value) => value + 1);
+        return;
+      }
 
       activeDiceIdsRef.current = new Set(
         Array.from({ length: diceCount }, (_, index) => index),
@@ -854,7 +910,7 @@ export function Scene({
         dicePositionRef={diceCenterRef}
         diceSpreadRef={diceSpreadRef}
         isDiceDraggingRef={isAnyDiceDraggingRef}
-        resetKey={resetKey}
+        resetKey={diceResetKey}
       />
       <DiceCenterTracker
         centerRef={diceCenterRef}
@@ -872,7 +928,7 @@ export function Scene({
       <StudioLights dicePositionRef={diceCenterRef} />
 
       <Physics
-        key={`${physicsProfile.id}:${worldType}:${diceCount}`}
+        key={`${physicsProfile.id}:${diceCount}`}
         gravity={physicsProfile.gravity}
         maxCcdSubsteps={physicsSimulationConfig.maxCcdSubsteps}
         paused={!isSceneActive}
@@ -882,25 +938,27 @@ export function Scene({
       >
         {diceTransforms.map((transform, diceIndex) => (
           <DiceInstance
-            key={`${resetKey}:${diceIndex}`}
+            key={`${diceResetKey}:${diceIndex}`}
             appearance={diceAppearance}
             diceIndex={diceIndex}
+            dragEnabled={diceCount === 1}
             keyboardThrowKey={keyboardThrowKey}
             physicsDebugEnabled={physicsDebugEnabled && diceIndex === 0}
             physicsProfile={physicsProfile}
             positionRef={dicePositionRefs[diceIndex]}
-            resetKey={resetKey}
+            resetKey={diceResetKey}
             transform={transform}
             onDragChange={handleDiceDragChange}
             onThrowStart={handleThrowStart}
             onSettle={handleSettle}
           />
         ))}
-        {worldType === "bounded" ? (
+        {/*
+          BoundedWorld reste volontairement dormant. Le produit utilise toujours
+          le monde ouvert ; pour une future iteration technique seulement :
           <BoundedWorld physicsProfile={physicsProfile} surface={surface} />
-        ) : (
-          <Floor physicsProfile={physicsProfile} surface={surface} />
-        )}
+        */}
+        <Floor physicsProfile={physicsProfile} surface={surface} />
       </Physics>
       <FollowContactShadows
         dicePositionRef={diceCenterRef}

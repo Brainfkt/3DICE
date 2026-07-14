@@ -45,9 +45,7 @@ export default function App() {
   const handleSettingsChange = useCallback(
     (patch: Partial<Omit<AppSettings, "version">>) => {
       const nextSettings = { ...settings, ...patch };
-      const simulationChanged =
-        nextSettings.diceCount !== settings.diceCount ||
-        nextSettings.worldType !== settings.worldType;
+      const simulationChanged = nextSettings.diceCount !== settings.diceCount;
 
       setSettings(nextSettings);
 
@@ -98,7 +96,6 @@ export default function App() {
         resetKey={resetKey}
         surface={surface}
         uiRevision={uiRevision}
-        worldType={settings.worldType}
         onThrowStart={handleThrowStart}
         onSettle={handleSettle}
       />

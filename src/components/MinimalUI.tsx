@@ -67,7 +67,10 @@ export function MinimalUI({
           <button
             aria-label="Réinitialiser"
             className="reset-button"
-            onClick={onReset}
+            onClick={(event) => {
+              onReset();
+              event.currentTarget.blur();
+            }}
             title="Réinitialiser"
             type="button"
           >
@@ -78,9 +81,11 @@ export function MinimalUI({
             aria-expanded={settingsOpen}
             aria-label="Réglages"
             className="settings-button"
-            onClick={() => {
-              setSettingsOpen((open) => !open);
+            onClick={(event) => {
+              const isClosing = settingsOpen;
+              setSettingsOpen(!settingsOpen);
               onSettingsVisibilityChange();
+              if (isClosing) event.currentTarget.blur();
             }}
             type="button"
           >

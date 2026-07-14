@@ -56,12 +56,13 @@ import { DiceAppearance } from "../settings/config";
 
 type DiceProps = {
   appearance: DiceAppearance;
+  dragEnabled: boolean;
   initialPosition: [number, number, number];
   initialRotation: [number, number, number];
   keyboardThrowKey: number;
   physicsDebugEnabled?: boolean;
   physicsProfile: PhysicsProfile;
-  resetKey: number;
+  resetKey: number | string;
   onDragChange?: (isDragging: boolean) => void;
   onThrowStart: () => void;
   onSettle: (face: number) => void;
@@ -136,6 +137,7 @@ type DragState = {
 
 export function Dice({
   appearance,
+  dragEnabled,
   initialPosition,
   initialRotation,
   keyboardThrowKey,
@@ -668,11 +670,15 @@ export function Dice({
   }, [resetDice, resetKey]);
 
   useEffect(() => {
-    gl.domElement.style.cursor = isDragging ? "grabbing" : "grab";
+    gl.domElement.style.cursor = dragEnabled
+      ? isDragging
+        ? "grabbing"
+        : "grab"
+      : "default";
     return () => {
       gl.domElement.style.cursor = "auto";
     };
-  }, [gl.domElement, isDragging]);
+  }, [dragEnabled, gl.domElement, isDragging]);
 
   useEffect(() => {
     if (handledKeyboardThrowKey.current === keyboardThrowKey) return;
@@ -860,7 +866,7 @@ export function Dice({
           friction={physicsProfile.dice.friction}
           restitution={physicsProfile.dice.restitution}
         />
-        <group onPointerDown={handlePointerDown}>
+        <group onPointerDown={dragEnabled ? handlePointerDown : undefined}>
           <mesh
             castShadow
             receiveShadow
