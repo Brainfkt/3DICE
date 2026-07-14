@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getSpaceThrowKeyAction } from "./keyboardThrow";
+import {
+  getDiceSpaceThrowMode,
+  getSpaceThrowKeyAction,
+} from "./keyboardThrow";
 
 const input = {
   blockedTarget: false,
@@ -28,5 +31,25 @@ describe("getSpaceThrowKeyAction", () => {
     expect(getSpaceThrowKeyAction({ ...input, blockedTarget: true })).toBe(
       "ignore",
     );
+  });
+});
+
+describe("getDiceSpaceThrowMode", () => {
+  it("keeps the single die protected from stacked throws", () => {
+    expect(
+      getDiceSpaceThrowMode({ diceCount: 1, hasActiveDice: false }),
+    ).toBe("throw");
+    expect(
+      getDiceSpaceThrowMode({ diceCount: 1, hasActiveDice: true }),
+    ).toBe("blocked");
+  });
+
+  it("always resets the multi-dice group before throwing", () => {
+    expect(
+      getDiceSpaceThrowMode({ diceCount: 2, hasActiveDice: false }),
+    ).toBe("reset-and-throw");
+    expect(
+      getDiceSpaceThrowMode({ diceCount: 4, hasActiveDice: true }),
+    ).toBe("reset-and-throw");
   });
 });
