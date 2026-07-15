@@ -459,10 +459,7 @@ export function MinimalUI({
         >
           <span className="power-gauge-name">Puissance du lancer</span>
           <span className="power-gauge-shell">
-            <span aria-hidden="true" className="power-gauge-cone" />
-            <span aria-hidden="true" className="power-gauge-marker-track">
-              <span className="power-gauge-marker" />
-            </span>
+            <span aria-hidden="true" className="power-gauge-track" />
             <input
               aria-label="Puissance du lancer clavier"
               aria-orientation="vertical"
