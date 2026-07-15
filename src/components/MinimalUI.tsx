@@ -15,6 +15,7 @@ import {
 } from "../physics/config";
 import {
   AppSettings,
+  cameraViewOptions,
   diceAppearanceOptions,
   diceCountOptions,
   diceTypeOptions,
@@ -379,20 +380,39 @@ export function MinimalUI({
                 <details>
                   <summary>Lancer et caméra</summary>
                   <div className="advanced-section-content toggle-stack">
-                    <SettingToggle
-                      checked={settings.autoRecenterEnabled}
-                      label="Recentrage auto"
-                      onChange={(autoRecenterEnabled) =>
-                        onSettingsChange({ autoRecenterEnabled })
-                      }
-                    />
-                    <SettingToggle
-                      checked={settings.cameraGesturesEnabled}
-                      label="Gestes caméra"
-                      onChange={(cameraGesturesEnabled) =>
-                        onSettingsChange({ cameraGesturesEnabled })
-                      }
-                    />
+                    <fieldset className="setting-group setting-group-wide">
+                      <legend>Vue</legend>
+                      <div className="segment-options">
+                        {cameraViewOptions.map((view) => (
+                          <button
+                            key={view.id}
+                            aria-pressed={settings.cameraView === view.id}
+                            onClick={() => onSettingsChange({ cameraView: view.id })}
+                            type="button"
+                          >
+                            {view.label}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                    {settings.cameraView === "free" ? (
+                      <>
+                        <SettingToggle
+                          checked={settings.autoRecenterEnabled}
+                          label="Recentrage auto"
+                          onChange={(autoRecenterEnabled) =>
+                            onSettingsChange({ autoRecenterEnabled })
+                          }
+                        />
+                        <SettingToggle
+                          checked={settings.cameraGesturesEnabled}
+                          label="Gestes caméra"
+                          onChange={(cameraGesturesEnabled) =>
+                            onSettingsChange({ cameraGesturesEnabled })
+                          }
+                        />
+                      </>
+                    ) : null}
                     <p className="shortcut-help">
                       <kbd>Espace</kbd> lancer · <kbd>R</kbd> reset · <kbd>F</kbd> plein écran
                     </p>

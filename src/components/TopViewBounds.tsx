@@ -54,7 +54,7 @@ export function TopViewBounds({
         args={[
           wallHalfThickness,
           wallHalfHeight,
-          layout.boundaryHalfDepth,
+          layout.boundaryHalfDepth + wallThickness,
         ]}
         friction={floor.friction}
         position={[-wallX, wallY, 0]}
@@ -64,7 +64,7 @@ export function TopViewBounds({
         args={[
           wallHalfThickness,
           wallHalfHeight,
-          layout.boundaryHalfDepth,
+          layout.boundaryHalfDepth + wallThickness,
         ]}
         friction={floor.friction}
         position={[wallX, wallY, 0]}

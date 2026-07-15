@@ -19,6 +19,7 @@ import {
 } from "react";
 import { Dice } from "./Dice";
 import { Floor } from "./Floor";
+import { TopViewBounds } from "./TopViewBounds";
 import {
   getDiceInitialTransforms,
   PhysicsProfile,
@@ -38,11 +39,17 @@ import {
 } from "../render/lighting";
 import {
   DiceAppearance,
+  CameraViewId,
   DiceCount,
   DiceTypeId,
   LightingPreset,
   SurfaceTheme,
 } from "../settings/config";
+import {
+  getTopViewLayout,
+  getTopViewThrowPlans,
+  TopViewThrowPlan,
+} from "../game/topView";
 import { getDieInitialHeight } from "../render/polyhedralDice";
 import {
   getDiceSpaceThrowMode,
@@ -55,6 +62,7 @@ type SceneProps = {
   advancedMode: boolean;
   autoRecenterEnabled: boolean;
   cameraGesturesEnabled: boolean;
+  cameraView: CameraViewId;
   diceAppearance: DiceAppearance;
   diceCount: DiceCount;
   diceType: DiceTypeId;
@@ -90,6 +98,11 @@ const BASE_CAMERA_FORWARD_HORIZONTAL = BASE_LOOK_AT.clone()
 const BASE_CAMERA_RIGHT_HORIZONTAL = new THREE.Vector3()
   .crossVectors(BASE_CAMERA_FORWARD_HORIZONTAL, new THREE.Vector3(0, 1, 0))
   .normalize();
+const FREE_CAMERA_UP = new THREE.Vector3(0, 1, 0);
+const TOP_VIEW_LOOK_AT = new THREE.Vector3(
+  ...renderConfig.camera.topView.lookAt,
+);
+const TOP_VIEW_UP = new THREE.Vector3(...renderConfig.camera.topView.up);
 const LOCKED_DICE_SIDE_DISTANCE = 3.35;
 const LOCKED_DICE_MIN_SIDE_DISTANCE = 1.5;
 const LOCKED_DICE_MIN_SPACING = 1.22;
@@ -250,6 +263,7 @@ function TouchThrowControl({
 }
 
 type CameraRigProps = {
+  cameraView: CameraViewId;
   dicePositionRef: MutableRefObject<THREE.Vector3>;
   diceSpreadRef: MutableRefObject<number>;
   gesturesEnabled: boolean;
@@ -259,6 +273,7 @@ type CameraRigProps = {
 };
 
 function CameraRig({
+  cameraView,
   dicePositionRef,
   diceSpreadRef,
   gesturesEnabled,
@@ -267,6 +282,10 @@ function CameraRig({
   resetKey,
 }: CameraRigProps) {
   const { camera, gl, invalidate, size } = useThree();
+  const topViewLayout = useMemo(
+    () => getTopViewLayout(size.width / Math.max(size.height, 1)),
+    [size.height, size.width],
+  );
   const lookAtRef = useRef(BASE_LOOK_AT.clone());
   const desiredPosition = useMemo(() => new THREE.Vector3(), []);
   const desiredLookAt = useMemo(() => new THREE.Vector3(), []);
@@ -304,6 +323,7 @@ function CameraRig({
     };
 
     const handleWheel = (event: WheelEvent) => {
+      if (cameraView !== "free") return;
       event.preventDefault();
       zoomTarget.current = clampNumber(
         zoomTarget.current * Math.exp(event.deltaY * 0.001),
@@ -314,7 +334,7 @@ function CameraRig({
     };
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!gesturesEnabled) return;
+      if (cameraView !== "free" || !gesturesEnabled) return;
       if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
       pinchPointers.current.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY));
       if (pinchPointers.current.size === 2) {
@@ -401,9 +421,16 @@ function CameraRig({
       element.removeEventListener("pointercancel", handlePointerUp);
       element.removeEventListener("pointerleave", handlePointerUp);
     };
-  }, [gesturesEnabled, gl.domElement, invalidate, isDiceDraggingRef]);
+  }, [
+    cameraView,
+    gesturesEnabled,
+    gl.domElement,
+    invalidate,
+    isDiceDraggingRef,
+  ]);
 
   useEffect(() => {
+    if (cameraView !== "free") return;
     lookAtRef.current.copy(BASE_LOOK_AT);
     desiredLookAt.copy(BASE_LOOK_AT);
     desiredPosition.copy(BASE_CAMERA_POSITION);
@@ -415,23 +442,66 @@ function CameraRig({
     orbitYaw.current = 0;
     orbitPitch.current = 0;
     rotatePointer.current = null;
+    camera.up.copy(FREE_CAMERA_UP);
     camera.position.copy(BASE_CAMERA_POSITION);
     camera.lookAt(lookAtRef.current);
     camera.updateProjectionMatrix();
     invalidate();
-  }, [camera, desiredLookAt, desiredPosition, invalidate, resetKey]);
+  }, [
+    camera,
+    cameraView,
+    desiredLookAt,
+    desiredPosition,
+    invalidate,
+    resetKey,
+  ]);
 
   useEffect(() => {
-    if (recenterKey === 0) return;
+    if (cameraView !== "top") return;
+    lookAtRef.current.copy(TOP_VIEW_LOOK_AT);
+    desiredLookAt.copy(TOP_VIEW_LOOK_AT);
+    desiredPosition.set(...topViewLayout.cameraPosition);
+    zoomTarget.current = 1;
+    zoomCurrent.current = 1;
+    pinchPointers.current.clear();
+    pinchStartDistance.current = 0;
+    pinchStartZoom.current = 1;
+    orbitYaw.current = 0;
+    orbitPitch.current = 0;
+    rotatePointer.current = null;
+    camera.up.copy(TOP_VIEW_UP);
+    camera.position.copy(desiredPosition);
+    camera.lookAt(TOP_VIEW_LOOK_AT);
+    camera.updateProjectionMatrix();
+    invalidate();
+  }, [
+    camera,
+    cameraView,
+    desiredLookAt,
+    desiredPosition,
+    invalidate,
+    resetKey,
+    topViewLayout.cameraPosition,
+  ]);
+
+  useEffect(() => {
+    if (cameraView !== "free" || recenterKey === 0) return;
     const dicePosition = dicePositionRef.current;
     lookAtRef.current.set(dicePosition.x, BASE_LOOK_AT.y, dicePosition.z);
     desiredLookAt.copy(lookAtRef.current);
     // Recenter the subject after a remote throw while preserving the user's
     // deliberate zoom and orbit. Only an explicit Reset restores those.
     invalidate();
-  }, [desiredLookAt, dicePositionRef, invalidate, recenterKey]);
+  }, [
+    cameraView,
+    desiredLookAt,
+    dicePositionRef,
+    invalidate,
+    recenterKey,
+  ]);
 
   useFrame((_, delta) => {
+    if (cameraView === "top") return;
     const safeDelta = Math.min(delta, 1 / 30);
     const dicePosition = dicePositionRef.current;
     const diceHeightLift =
@@ -780,6 +850,51 @@ function DiceCenterTracker({
   return null;
 }
 
+function TopViewEntryMonitor({
+  active,
+  diceIds,
+  onEntered,
+  positionRefs,
+}: {
+  active: boolean;
+  diceIds: readonly number[];
+  onEntered: () => void;
+  positionRefs: readonly MutableRefObject<THREE.Vector3>[];
+}) {
+  const { height, width } = useThree((state) => state.size);
+  const layout = useMemo(
+    () => getTopViewLayout(width / Math.max(height, 1)),
+    [height, width],
+  );
+  const completedRef = useRef(false);
+
+  useEffect(() => {
+    completedRef.current = false;
+  }, [active, diceIds]);
+
+  useFrame(() => {
+    if (!active || completedRef.current || diceIds.length === 0) return;
+
+    const inset = physicsWorldConfig.topViewBounds.entrySafetyInset;
+    const halfWidth = layout.boundaryHalfWidth - inset;
+    const halfDepth = layout.boundaryHalfDepth - inset;
+    const allInside = diceIds.every((diceIndex) => {
+      const position = positionRefs[diceIndex]?.current;
+      return (
+        position !== undefined &&
+        Math.abs(position.x) <= halfWidth &&
+        Math.abs(position.z) <= halfDepth
+      );
+    });
+
+    if (!allInside) return;
+    completedRef.current = true;
+    onEntered();
+  }, physicsSimulationConfig.updatePriority + 2);
+
+  return null;
+}
+
 type ImpactPulse = {
   color: string;
   id: number;
@@ -861,6 +976,7 @@ function DiceInstance({
   dragEnabled,
   keyboardThrowKey,
   keyboardThrowEnabled,
+  keyboardThrowPlan,
   onGrab,
   onImpact,
   onDragChange,
@@ -876,6 +992,7 @@ function DiceInstance({
   resetBeforeKeyboardThrow,
   throwPower,
   transform,
+  visible,
 }: {
   appearance: DiceAppearance;
   dieType: DiceTypeId;
@@ -883,6 +1000,7 @@ function DiceInstance({
   dragEnabled: boolean;
   keyboardThrowKey: number;
   keyboardThrowEnabled: boolean;
+  keyboardThrowPlan: TopViewThrowPlan | null;
   onGrab: (diceIndex: number) => void;
   onImpact: (diceIndex: number, impact: { position: THREE.Vector3; strength: number }) => void;
   onDragChange: (diceIndex: number, dragging: boolean) => void;
@@ -898,6 +1016,7 @@ function DiceInstance({
   resetBeforeKeyboardThrow: boolean;
   throwPower: number;
   transform: DiceTransform;
+  visible: boolean;
 }) {
   const handleDragChange = useCallback(
     (dragging: boolean) => onDragChange(diceIndex, dragging),
@@ -927,6 +1046,7 @@ function DiceInstance({
       initialRotation={transform.rotation}
       keyboardThrowKey={keyboardThrowKey}
       keyboardThrowEnabled={keyboardThrowEnabled}
+      keyboardThrowPlan={keyboardThrowPlan}
       parked={parked}
       parkingAnchorRef={parkingAnchorRef}
       parkingOffset={parkingOffset}
@@ -941,6 +1061,7 @@ function DiceInstance({
       onThrowStart={handleThrowStart}
       onSettle={handleSettle}
       trackedPosition={positionRef}
+      visible={visible}
     />
   );
 }
@@ -1018,6 +1139,7 @@ export function Scene({
   advancedMode,
   autoRecenterEnabled,
   cameraGesturesEnabled,
+  cameraView,
   diceAppearance,
   diceCount,
   diceType,
@@ -1050,16 +1172,24 @@ export function Scene({
   const hadParkedDiceRef = useRef(false);
   const isAnyDiceDraggingRef = useRef(false);
   const activeDiceIdsRef = useRef(new Set<number>());
-  const pendingMultiDiceRelaunchRef = useRef(false);
-  const pendingMultiDiceRelaunchFrameRef = useRef<number | null>(null);
+  const pendingRelaunchRef = useRef(false);
+  const pendingRelaunchFrameRef = useRef<number | null>(null);
   const [keyboardThrowKey, setKeyboardThrowKey] = useState(0);
-  const [multiDiceResetKey, setMultiDiceResetKey] = useState(0);
+  const [relaunchResetKey, setRelaunchResetKey] = useState(0);
   const [cameraRecenterKey, setCameraRecenterKey] = useState(0);
   const [viewportAspect, setViewportAspect] = useState(getViewportAspect);
+  const [topViewThrowPlans, setTopViewThrowPlans] = useState<
+    (TopViewThrowPlan | null)[]
+  >([]);
+  const [topViewEnteringDiceIds, setTopViewEnteringDiceIds] = useState<
+    number[]
+  >([]);
+  const [topViewHasThrown, setTopViewHasThrown] = useState(false);
+  const [topViewEntering, setTopViewEntering] = useState(false);
   const [impactPulses, setImpactPulses] = useState<ImpactPulse[]>([]);
   const nextImpactIdRef = useRef(0);
-  const sceneResetKey = `${resetKey}:${multiDiceResetKey}`;
-  const simulationEpoch = `${physicsProfile.id}:${diceType}:${diceCount}:${sceneResetKey}`;
+  const sceneResetKey = `${resetKey}:${relaunchResetKey}`;
+  const simulationEpoch = `${physicsProfile.id}:${diceType}:${diceCount}:${cameraView}:${sceneResetKey}`;
   const [sceneActivity, setSceneActivity] = useState<SceneActivity>({
     active: false,
     epoch: simulationEpoch,
@@ -1069,6 +1199,10 @@ export function Scene({
   const renderMetricsEnabled = isRenderPerfEnabled(search);
   const physicsDebugEnabled = isPhysicsDebugEnabled(search);
   const dpr = getRenderDprSetting(search);
+  const topViewLayout = useMemo(
+    () => getTopViewLayout(viewportAspect),
+    [viewportAspect],
+  );
   const isSceneActive =
     sceneActivity.epoch === simulationEpoch && sceneActivity.active;
   const throwableDiceIds = useMemo(
@@ -1170,17 +1304,24 @@ export function Scene({
     }
   }, [dicePositionRefs, diceTransforms, simulationEpoch]);
 
+  useLayoutEffect(() => {
+    setTopViewThrowPlans([]);
+    setTopViewEnteringDiceIds([]);
+    setTopViewHasThrown(false);
+    setTopViewEntering(false);
+  }, [cameraView, diceCount, diceType, physicsProfile.id, resetKey]);
+
   useEffect(() => {
-    if (pendingMultiDiceRelaunchFrameRef.current !== null) {
-      cancelAnimationFrame(pendingMultiDiceRelaunchFrameRef.current);
-      pendingMultiDiceRelaunchFrameRef.current = null;
+    if (pendingRelaunchFrameRef.current !== null) {
+      cancelAnimationFrame(pendingRelaunchFrameRef.current);
+      pendingRelaunchFrameRef.current = null;
     }
-    pendingMultiDiceRelaunchRef.current = false;
-  }, [diceCount, diceType, physicsProfile.id, resetKey]);
+    pendingRelaunchRef.current = false;
+  }, [cameraView, diceCount, diceType, physicsProfile.id, resetKey]);
 
   useEffect(() => {
     refreshStaticShadow();
-  }, [refreshStaticShadow, multiDiceResetKey, resetKey]);
+  }, [refreshStaticShadow, relaunchResetKey, resetKey]);
 
   useEffect(() => {
     if (!advancedMode) return;
@@ -1189,26 +1330,29 @@ export function Scene({
   }, [advancedMode, lockedDiceSignature, refreshStaticShadow]);
 
   useEffect(() => {
-    if (!pendingMultiDiceRelaunchRef.current) return;
+    if (!pendingRelaunchRef.current) return;
 
     const frameId = requestAnimationFrame(() => {
-      pendingMultiDiceRelaunchFrameRef.current = null;
-      if (!pendingMultiDiceRelaunchRef.current) return;
+      pendingRelaunchFrameRef.current = null;
+      if (!pendingRelaunchRef.current) return;
 
-      pendingMultiDiceRelaunchRef.current = false;
+      pendingRelaunchRef.current = false;
       activeDiceIdsRef.current = new Set(throwableDiceIds);
+      if (cameraView === "top") {
+        setTopViewHasThrown(true);
+      }
       setIsSceneActive(true);
       setKeyboardThrowKey((value) => value + 1);
     });
-    pendingMultiDiceRelaunchFrameRef.current = frameId;
+    pendingRelaunchFrameRef.current = frameId;
 
     return () => {
-      if (pendingMultiDiceRelaunchFrameRef.current === frameId) {
+      if (pendingRelaunchFrameRef.current === frameId) {
         cancelAnimationFrame(frameId);
-        pendingMultiDiceRelaunchFrameRef.current = null;
+        pendingRelaunchFrameRef.current = null;
       }
     };
-  }, [multiDiceResetKey, setIsSceneActive, throwableDiceIds]);
+  }, [cameraView, relaunchResetKey, setIsSceneActive, throwableDiceIds]);
 
   const handleDiceDragChange = useCallback((diceIndex: number, dragging: boolean) => {
     isAnyDiceDraggingRef.current = dragging;
@@ -1253,6 +1397,10 @@ export function Scene({
     setImpactPulses((current) => current.filter((impact) => impact.id !== id));
   }, []);
 
+  const handleTopViewEntryComplete = useCallback(() => {
+    setTopViewEntering(false);
+  }, []);
+
   const handleSettle = useCallback((diceIndex: number, face: number) => {
     activeDiceIdsRef.current.delete(diceIndex);
     onSettle(diceIndex, face);
@@ -1269,26 +1417,51 @@ export function Scene({
     const throwMode = getDiceSpaceThrowMode({
       diceCount,
       hasActiveDice: activeDiceIdsRef.current.size > 0,
+      resetBeforeThrow: cameraView === "top",
     });
 
     if (throwMode === "blocked") return;
     if (throwableDiceIds.length === 0) return;
 
     if (throwMode === "reset-and-throw") {
-      if (pendingMultiDiceRelaunchRef.current) return;
+      if (pendingRelaunchRef.current) return;
 
-      pendingMultiDiceRelaunchRef.current = true;
+      if (cameraView === "top") {
+        const plans = getTopViewThrowPlans({
+          count: throwableDiceIds.length,
+          initialHeight: getDieInitialHeight(diceType),
+          layout: topViewLayout,
+        });
+        const plansByDice = Array<TopViewThrowPlan | null>(diceCount).fill(
+          null,
+        );
+        throwableDiceIds.forEach((diceIndex, planIndex) => {
+          plansByDice[diceIndex] = plans[planIndex];
+        });
+        setTopViewThrowPlans(plansByDice);
+        setTopViewEnteringDiceIds([...throwableDiceIds]);
+        setTopViewEntering(true);
+      }
+
+      pendingRelaunchRef.current = true;
       activeDiceIdsRef.current.clear();
       isAnyDiceDraggingRef.current = false;
       setIsSceneActive(false);
-      setMultiDiceResetKey((value) => value + 1);
+      setRelaunchResetKey((value) => value + 1);
       return;
     }
 
     activeDiceIdsRef.current = new Set(throwableDiceIds);
     setIsSceneActive(true);
     setKeyboardThrowKey((value) => value + 1);
-  }, [diceCount, setIsSceneActive, throwableDiceIds]);
+  }, [
+    cameraView,
+    diceCount,
+    diceType,
+    setIsSceneActive,
+    throwableDiceIds,
+    topViewLayout,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1335,7 +1508,13 @@ export function Scene({
     >
       <color attach="background" args={[surface.background]} />
       <fog attach="fog" args={[surface.fog, 24, 145]} />
-      <PerspectiveCamera makeDefault position={BASE_CAMERA_POSITION.toArray()} fov={46} near={0.1} far={1200} />
+      <PerspectiveCamera
+        makeDefault
+        position={BASE_CAMERA_POSITION.toArray()}
+        fov={renderConfig.camera.topView.fov}
+        near={0.1}
+        far={1200}
+      />
       <ActiveFrameDriver active={isSceneActive} />
       <ToneMappingController preset={lightingPreset} />
       <TouchThrowControl
@@ -1343,9 +1522,12 @@ export function Scene({
         onTap={requestDiceThrow}
       />
       <CameraRig
+        cameraView={cameraView}
         dicePositionRef={diceCenterRef}
         diceSpreadRef={diceSpreadRef}
-        gesturesEnabled={advancedMode && cameraGesturesEnabled}
+        gesturesEnabled={
+          cameraView === "free" && advancedMode && cameraGesturesEnabled
+        }
         isDiceDraggingRef={isAnyDiceDraggingRef}
         recenterKey={cameraRecenterKey}
         resetKey={sceneResetKey}
@@ -1355,6 +1537,12 @@ export function Scene({
         includedIndices={cameraTrackedDiceIds}
         positionRefs={dicePositionRefs}
         spreadRef={diceSpreadRef}
+      />
+      <TopViewEntryMonitor
+        active={cameraView === "top" && topViewEntering}
+        diceIds={topViewEnteringDiceIds}
+        onEntered={handleTopViewEntryComplete}
+        positionRefs={dicePositionRefs}
       />
       {renderMetricsEnabled ? <RenderMetrics /> : null}
       <ShadowMapController dynamic={isSceneActive} staticKey={staticShadowKey} />
@@ -1378,15 +1566,16 @@ export function Scene({
         {diceTransforms.map((transform, diceIndex) => (
           <DiceInstance
             // An explicit Reset remounts the body so Three and paused Rapier
-            // cannot retain different transforms. Multi-dice relaunches keep
+            // cannot retain different transforms. Automatic relaunches keep
             // the same resetKey and still reset atomically inside Dice.
             key={`${resetKey}:${diceIndex}`}
             appearance={diceAppearance}
             dieType={diceType}
             diceIndex={diceIndex}
-            dragEnabled={diceCount === 1}
+            dragEnabled={cameraView === "free" && diceCount === 1}
             keyboardThrowKey={keyboardThrowKey}
             keyboardThrowEnabled={throwableDiceIds.includes(diceIndex)}
+            keyboardThrowPlan={topViewThrowPlans[diceIndex] ?? null}
             parked={advancedMode && Boolean(lockedDice[diceIndex])}
             parkingAnchorRef={parkingAnchorWorldRef}
             parkingOffset={parkingOffsets[diceIndex]}
@@ -1395,20 +1584,19 @@ export function Scene({
             physicsDebugEnabled={physicsDebugEnabled && diceIndex === 0}
             physicsProfile={physicsProfile}
             positionRef={dicePositionRefs[diceIndex]}
-            resetBeforeKeyboardThrow={diceCount > 1}
+            resetBeforeKeyboardThrow={diceCount > 1 || cameraView === "top"}
             resetKey={resetKey}
             throwPower={throwPower}
             transform={transform}
+            visible={cameraView === "free" || topViewHasThrown}
             onDragChange={handleDiceDragChange}
             onThrowStart={handleThrowStart}
             onSettle={handleSettle}
           />
         ))}
-        {/*
-          BoundedWorld reste volontairement dormant. Le produit utilise toujours
-          le monde ouvert ; pour une future iteration technique seulement :
-          <BoundedWorld physicsProfile={physicsProfile} surface={surface} />
-        */}
+        {cameraView === "top" && !topViewEntering ? (
+          <TopViewBounds physicsProfile={physicsProfile} />
+        ) : null}
         <Floor physicsProfile={physicsProfile} surface={surface} />
       </Physics>
       <FollowContactShadows

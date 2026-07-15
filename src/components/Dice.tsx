@@ -16,6 +16,7 @@ import {
   RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,7 @@ import {
   createSettleState,
   getDragTargetFromPointerDelta,
   getKeyboardThrowVectors,
+  getTopViewThrowVectors,
   getLocalPointFromWorldOffset,
   getLimitedBodyMotion,
   getNextSettleState,
@@ -59,6 +61,7 @@ import {
   detectDieFace,
   getPolyhedralDieDefinition,
 } from "../render/polyhedralDice";
+import type { TopViewThrowPlan } from "../game/topView";
 
 type DiceProps = {
   appearance: DiceAppearance;
@@ -68,6 +71,7 @@ type DiceProps = {
   initialRotation: [number, number, number];
   keyboardThrowKey: number;
   keyboardThrowEnabled: boolean;
+  keyboardThrowPlan?: TopViewThrowPlan | null;
   parked: boolean;
   parkingAnchorRef: MutableRefObject<THREE.Vector3>;
   parkingOffset: [number, number, number];
@@ -83,6 +87,7 @@ type DiceProps = {
   onSettle: (face: number) => void;
   trackedPosition?: MutableRefObject<THREE.Vector3>;
   isDraggingRef?: MutableRefObject<boolean>;
+  visible?: boolean;
 };
 
 const DICE_SIZE = 1.12;
@@ -158,6 +163,7 @@ export function Dice({
   initialRotation,
   keyboardThrowKey,
   keyboardThrowEnabled,
+  keyboardThrowPlan = null,
   parked,
   parkingAnchorRef,
   parkingOffset,
@@ -173,6 +179,7 @@ export function Dice({
   onSettle,
   trackedPosition,
   isDraggingRef,
+  visible = true,
 }: DiceProps) {
   const initialPositionVector = useMemo(
     () => new THREE.Vector3(...initialPosition),
@@ -245,7 +252,7 @@ export function Dice({
         thickness: appearance.transmission > 0 ? 0.72 : 0,
         transparent: appearance.transmission > 0,
         opacity: appearance.transmission > 0 ? 0.9 : 1,
-        flatShading: dieType !== "d6",
+        flatShading: false,
       }),
     [appearance, dieType],
   );
@@ -422,18 +429,18 @@ export function Dice({
     [gl.domElement],
   );
 
-  const resetDice = useCallback(() => {
+  const resetDice = useCallback((position = initialPositionVector) => {
     const body = bodyRef.current;
     if (!body) return;
 
-    body.setTranslation(initialPositionVector, true);
+    body.setTranslation(position, true);
     body.setRotation(initialRotationQuaternion, true);
     body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     detachDragJoint();
-    targetPosition.current.copy(initialPositionVector);
-    anchorRef.current?.setTranslation(initialPositionVector, true);
-    trackedPosition?.current.copy(initialPositionVector);
+    targetPosition.current.copy(position);
+    anchorRef.current?.setTranslation(position, true);
+    trackedPosition?.current.copy(position);
     activePointerId.current = null;
     dragTargetDirtyRef.current = false;
     if (isDraggingRef) {
@@ -738,6 +745,11 @@ export function Dice({
     resetDice();
   }, [resetDice, resetKey]);
 
+  useLayoutEffect(() => {
+    if (!keyboardThrowPlan) return;
+    resetDice(new THREE.Vector3(...keyboardThrowPlan.position));
+  }, [keyboardThrowPlan, resetDice]);
+
   useEffect(() => {
     const body = bodyRef.current;
     if (!body) return;
@@ -815,20 +827,39 @@ export function Dice({
     handledKeyboardThrowKey.current = keyboardThrowKey;
 
     if (!keyboardThrowEnabled) return;
-    if (resetBeforeKeyboardThrow) resetDice();
+    if (resetBeforeKeyboardThrow) {
+      resetDice(
+        keyboardThrowPlan
+          ? new THREE.Vector3(...keyboardThrowPlan.position)
+          : undefined,
+      );
+    }
     if (activePointerId.current !== null || hasActiveThrow.current) return;
 
     const body = bodyRef.current;
     if (!body) return;
 
     body.recomputeMassPropertiesFromColliders();
-    const forwardAxis = camera.getWorldDirection(new THREE.Vector3());
-    const rightAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-    const { pointVelocity, wristTorqueImpulse } = getKeyboardThrowVectors({
-      forwardAxis,
-      rightAxis,
-      powerScale: throwPower,
-    });
+    const throwVectors = keyboardThrowPlan
+      ? getTopViewThrowVectors({
+          direction: {
+            x: keyboardThrowPlan.direction[0],
+            y: keyboardThrowPlan.direction[1],
+            z: keyboardThrowPlan.direction[2],
+          },
+          gravityY: physicsProfile.gravity[1],
+          powerScale: throwPower,
+          targetDistance: keyboardThrowPlan.targetDistance,
+        })
+      : getKeyboardThrowVectors({
+          forwardAxis: camera.getWorldDirection(new THREE.Vector3()),
+          rightAxis: new THREE.Vector3().setFromMatrixColumn(
+            camera.matrixWorld,
+            0,
+          ),
+          powerScale: throwPower,
+        });
+    const { pointVelocity, wristTorqueImpulse } = throwVectors;
     const localKeyboardPoint = getLocalPointFromWorldOffset(
       {
         x: physicsConfig.throw.keyboard.worldImpulseOffset[0],
@@ -855,6 +886,8 @@ export function Dice({
     commitThrow,
     keyboardThrowKey,
     keyboardThrowEnabled,
+    keyboardThrowPlan,
+    physicsProfile.gravity,
     resetBeforeKeyboardThrow,
     resetDice,
     throwPower,
@@ -982,6 +1015,7 @@ export function Dice({
       ) : null}
       <RigidBody
         ref={bodyRef}
+        type={parked ? "kinematicPosition" : "dynamic"}
         additionalSolverIterations={
           physicsSimulationConfig.additionalSolverIterations
         }
@@ -1005,7 +1039,7 @@ export function Dice({
             mass={physicsProfile.dice.mass}
             friction={physicsProfile.dice.friction}
             restitution={physicsProfile.dice.restitution}
-            sensor={parked}
+            sensor={false}
           />
         ) : (
           <RoundCuboidCollider
@@ -1019,10 +1053,13 @@ export function Dice({
             mass={physicsProfile.dice.mass}
             friction={physicsProfile.dice.friction}
             restitution={physicsProfile.dice.restitution}
-            sensor={parked}
+            sensor={false}
           />
         )}
-        <group onPointerDown={dragEnabled ? handlePointerDown : undefined}>
+        <group
+          onPointerDown={dragEnabled ? handlePointerDown : undefined}
+          visible={visible}
+        >
           {polyhedralDefinition ? (
             <>
               <mesh
