@@ -522,7 +522,7 @@ export function MinimalUI({
         className={`help-text ${helpVisible ? "is-visible" : "is-hidden"}`}
       >
         <span className="help-copy help-copy-desktop">
-          {isMultiDice ? (
+          {settings.cameraView === "top" || isMultiDice ? (
             <>
               <SpaceKey /> pour (re)lancer
             </>
@@ -533,7 +533,7 @@ export function MinimalUI({
           )}
         </span>
         <span className="help-copy help-copy-touch">
-          {isMultiDice
+          {settings.cameraView === "top" || isMultiDice
             ? "Tapez sur l’écran pour (re)lancer"
             : "Glissez puis relâchez ou tapez sur l’écran pour lancer"}
         </span>
