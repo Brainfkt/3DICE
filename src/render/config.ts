@@ -8,7 +8,9 @@ export const renderConfig = {
       baseDistance: 11.2,
       fov: 46,
       lookAt: [0, 0, 0] as [number, number, number],
-      minimumVisibleHalfWidth: 2.4,
+      // Portrait phones need a wider physical arena than their narrow aspect
+      // would otherwise allow. Desktop/tablet still use baseDistance.
+      minimumVisibleHalfWidth: 3.25,
       up: [0, 0, -1] as [number, number, number],
     },
   },

@@ -58,6 +58,25 @@ function getUniqueGeometryVertices(geometry: THREE.BufferGeometry) {
   return vertices;
 }
 
+function computeCenteredBoundingSphere(geometry: THREE.BufferGeometry) {
+  const position = geometry.getAttribute("position");
+  let radiusSquared = 0;
+
+  for (let index = 0; index < position.count; index += 1) {
+    radiusSquared = Math.max(
+      radiusSquared,
+      position.getX(index) ** 2 +
+        position.getY(index) ** 2 +
+        position.getZ(index) ** 2,
+    );
+  }
+
+  geometry.boundingSphere = new THREE.Sphere(
+    new THREE.Vector3(),
+    Math.sqrt(radiusSquared),
+  );
+}
+
 function createD4ResultVertices(geometry: THREE.BufferGeometry) {
   return getUniqueGeometryVertices(geometry)
     .sort((left, right) => {
@@ -315,6 +334,16 @@ function createGeometry(type: Exclude<DiceTypeId, "d6">) {
 function createDefinition(type: Exclude<DiceTypeId, "d6">) {
   const geometry = createGeometry(type);
   geometry.computeVertexNormals();
+  if (type === "d4") {
+    const canonicalFace = extractPlanarFaces(geometry)[0];
+    geometry.applyQuaternion(
+      new THREE.Quaternion().setFromUnitVectors(
+        canonicalFace.localNormal,
+        new THREE.Vector3(0, -1, 0),
+      ),
+    );
+    geometry.computeVertexNormals();
+  }
   const rawFaces = extractPlanarFaces(geometry);
   const expectedFaces = Number(type.slice(1));
 
@@ -324,7 +353,7 @@ function createDefinition(type: Exclude<DiceTypeId, "d6">) {
     );
   }
 
-  geometry.computeBoundingSphere();
+  computeCenteredBoundingSphere(geometry);
   const initialHeight = (geometry.boundingSphere?.radius ?? 0.7) + 0.035;
   const baseLabelHeight = type === "d20"
     ? 0.27

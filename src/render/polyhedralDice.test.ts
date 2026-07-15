@@ -171,6 +171,22 @@ describe("polyhedral dice", () => {
     }
   });
 
+  it("gives the d4 a canonical face-down resting orientation", () => {
+    const definition = getPolyhedralDieDefinition("d4")!;
+    const downwardFace = definition.faces.reduce((lowest, face) =>
+      face.localNormal.y < lowest.localNormal.y ? face : lowest,
+    );
+    const vertexHeights = definition.resultVertices
+      .map((vertex) => vertex.localPosition.y)
+      .sort((left, right) => left - right);
+
+    expect(downwardFace.localNormal.y).toBeCloseTo(-1, 5);
+    expect(vertexHeights[0]).toBeCloseTo(vertexHeights[1], 5);
+    expect(vertexHeights[1]).toBeCloseTo(vertexHeights[2], 5);
+    expect(vertexHeights[2]).toBeLessThan(0);
+    expect(vertexHeights[3]).toBeGreaterThan(0);
+  });
+
   it.each(faceReadTypes)("detects every labelled face of %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
     const up = new THREE.Vector3(0, 1, 0);
