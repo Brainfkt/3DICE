@@ -71,7 +71,7 @@ describe("polyhedral dice", () => {
     expect(radius / d6BoundingRadius).toBeLessThan(0.9);
   });
 
-  it.each(polyhedralTypes)("uses a subtly rounded visual and physical envelope on %s", (type) => {
+  it.each(polyhedralTypes)("uses subtly rounded visuals and a stable collider on %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
     const sharpRadius = definition.geometry.boundingSphere!.radius;
     const colliderPosition = new THREE.BufferAttribute(
@@ -89,11 +89,20 @@ describe("polyhedral dice", () => {
       );
     }
 
-    expect(roundedRadius / sharpRadius).toBeGreaterThan(0.94);
-    expect(roundedRadius / sharpRadius).toBeLessThan(0.995);
-    expect(definition.colliderVertices.length / 3).toBeGreaterThan(
+    expect(definition.bodyGeometry.getAttribute("position").count).toBeGreaterThan(
       definition.geometry.getAttribute("position").count,
     );
+
+    if (type === "d4") {
+      expect(roundedRadius / sharpRadius).toBeCloseTo(1, 5);
+      expect(definition.colliderVertices.length / 3).toBe(4);
+    } else {
+      expect(roundedRadius / sharpRadius).toBeGreaterThan(0.94);
+      expect(roundedRadius / sharpRadius).toBeLessThan(0.995);
+      expect(definition.colliderVertices.length / 3).toBeGreaterThan(
+        definition.geometry.getAttribute("position").count,
+      );
+    }
   });
 
   it.each(polyhedralTypes)("creates a convex labelled %s", (type) => {

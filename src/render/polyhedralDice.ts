@@ -372,10 +372,15 @@ function createDefinition(type: Exclude<DiceTypeId, "d6">) {
   bodyGeometry.name = "polyhedral-dice-rounded-body";
   engraved.body.dispose();
   rounded.edgeGeometry.dispose();
+  const colliderVertices = type === "d4"
+    ? new Float32Array(
+        resultVertices.flatMap((vertex) => vertex.localPosition.toArray()),
+      )
+    : rounded.colliderVertices;
 
   return {
     bodyGeometry,
-    colliderVertices: rounded.colliderVertices,
+    colliderVertices,
     engravingGeometry: engraved.engraving,
     engravingMetrics: engraved.metrics,
     faces,
