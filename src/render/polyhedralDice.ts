@@ -351,8 +351,8 @@ function createDefinition(type: Exclude<DiceTypeId, "d6">) {
             resultVertices,
           );
           return {
-            position: face.center.clone().lerp(roundedVertex, 0.48),
-            requestedHeight: 0.205 * POLYHEDRAL_DIE_SCALE,
+            position: face.center.clone().lerp(roundedVertex, 0.25),
+            requestedHeight: 0.18 * POLYHEDRAL_DIE_SCALE,
             up: roundedVertex.clone().sub(face.center).normalize(),
             value: resultVertex.value,
           };
