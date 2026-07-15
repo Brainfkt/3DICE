@@ -29,6 +29,10 @@ function getEffectiveDiceType(settings: AppSettings) {
   return settings.advancedMode ? settings.diceType : "d6";
 }
 
+function getEffectiveCameraView(settings: AppSettings) {
+  return settings.advancedMode ? settings.cameraView : "free";
+}
+
 export default function App() {
   const [settings, setSettings] = useState(loadStoredSettings);
   const [faces, setFaces] = useState<(number | null)[]>(() =>
@@ -52,6 +56,7 @@ export default function App() {
   );
   const physicsProfile = getPhysicsProfile(physicsProfileId);
   const effectiveDiceType = getEffectiveDiceType(settings);
+  const effectiveCameraView = getEffectiveCameraView(settings);
   const effectiveAppearanceId =
     settings.advancedMode || STANDARD_APPEARANCE_IDS.has(settings.diceAppearanceId)
       ? settings.diceAppearanceId
@@ -84,7 +89,8 @@ export default function App() {
       const nextSettings = { ...settings, ...patch };
       const simulationChanged =
         nextSettings.diceCount !== settings.diceCount ||
-        getEffectiveDiceType(nextSettings) !== getEffectiveDiceType(settings);
+        getEffectiveDiceType(nextSettings) !== getEffectiveDiceType(settings) ||
+        getEffectiveCameraView(nextSettings) !== getEffectiveCameraView(settings);
 
       setSettings(nextSettings);
 
@@ -284,6 +290,7 @@ export default function App() {
         advancedMode={settings.advancedMode}
         autoRecenterEnabled={settings.autoRecenterEnabled}
         cameraGesturesEnabled={settings.cameraGesturesEnabled}
+        cameraView={effectiveCameraView}
         diceAppearance={diceAppearance}
         diceCount={settings.diceCount}
         diceType={effectiveDiceType}
