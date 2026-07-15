@@ -8,11 +8,12 @@ import {
 describe("stored app settings", () => {
   it("keeps the single ivory die setup as the default", () => {
     expect(defaultAppSettings).toEqual({
-      version: 3,
+      version: 4,
       advancedMode: false,
       audioEnabled: true,
       autoRecenterEnabled: true,
       cameraGesturesEnabled: true,
+      cameraView: "free",
       diceAppearanceId: "ivory",
       diceCount: 1,
       diceType: "d6",
@@ -24,18 +25,19 @@ describe("stored app settings", () => {
       surfaceId: "graphite",
       throwPower: 1,
     });
-    expect(SETTINGS_STORAGE_KEY).toContain("v3");
+    expect(SETTINGS_STORAGE_KEY).toContain("v4");
   });
 
   it("restores every supported setting", () => {
     expect(
       parseStoredSettings(
         JSON.stringify({
-          version: 3,
+          version: 4,
           advancedMode: true,
           audioEnabled: false,
           autoRecenterEnabled: false,
           cameraGesturesEnabled: false,
+          cameraView: "top",
           diceAppearanceId: "brushed-metal",
           diceCount: 4,
           diceType: "d20",
@@ -49,11 +51,12 @@ describe("stored app settings", () => {
         }),
       ),
     ).toEqual({
-      version: 3,
+      version: 4,
       advancedMode: true,
       audioEnabled: false,
       autoRecenterEnabled: false,
       cameraGesturesEnabled: false,
+      cameraView: "top",
       diceAppearanceId: "brushed-metal",
       diceCount: 4,
       diceType: "d20",
@@ -108,6 +111,7 @@ describe("stored app settings", () => {
       parseStoredSettings(
         JSON.stringify({
           advancedMode: true,
+          cameraView: "side",
           diceType: "d100",
           lightingPresetId: "sunset",
           throwPower: 4,
@@ -116,6 +120,7 @@ describe("stored app settings", () => {
     ).toEqual({
       ...defaultAppSettings,
       advancedMode: true,
+      cameraView: "free",
       throwPower: 1.35,
     });
   });

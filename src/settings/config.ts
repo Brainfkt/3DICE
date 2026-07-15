@@ -243,6 +243,11 @@ export const diceTypeOptions = [
 
 export const diceCountOptions = [1, 2, 3, 4] as const;
 
+export const cameraViewOptions = [
+  { id: "free", label: "Vue libre" },
+  { id: "top", label: "Vue du dessus" },
+] as const;
+
 export type DiceAppearanceId = (typeof diceAppearanceOptions)[number]["id"];
 export type DiceAppearance = (typeof diceAppearanceOptions)[number];
 export type SurfaceId = (typeof surfaceOptions)[number]["id"];
@@ -251,9 +256,10 @@ export type LightingPresetId = (typeof lightingPresetOptions)[number]["id"];
 export type LightingPreset = (typeof lightingPresetOptions)[number];
 export type DiceTypeId = (typeof diceTypeOptions)[number]["id"];
 export type DiceCount = (typeof diceCountOptions)[number];
+export type CameraViewId = (typeof cameraViewOptions)[number]["id"];
 
 export type AppSettings = {
-  version: 3;
+  version: 4;
   advancedMode: boolean;
   audioEnabled: boolean;
   hapticsEnabled: boolean;
@@ -262,6 +268,7 @@ export type AppSettings = {
   resultAnimationEnabled: boolean;
   autoRecenterEnabled: boolean;
   cameraGesturesEnabled: boolean;
+  cameraView: CameraViewId;
   diceAppearanceId: DiceAppearanceId;
   surfaceId: SurfaceId;
   lightingPresetId: LightingPresetId;
@@ -271,7 +278,7 @@ export type AppSettings = {
 };
 
 export const defaultAppSettings: AppSettings = {
-  version: 3,
+  version: 4,
   advancedMode: false,
   audioEnabled: true,
   hapticsEnabled: true,
@@ -280,6 +287,7 @@ export const defaultAppSettings: AppSettings = {
   resultAnimationEnabled: true,
   autoRecenterEnabled: true,
   cameraGesturesEnabled: true,
+  cameraView: "free",
   diceAppearanceId: "ivory",
   surfaceId: "graphite",
   lightingPresetId: "studio",
@@ -288,8 +296,9 @@ export const defaultAppSettings: AppSettings = {
   throwPower: 1,
 };
 
-export const SETTINGS_STORAGE_KEY = "3dice.settings.v3";
-const PREVIOUS_SETTINGS_STORAGE_KEY = "3dice.settings.v2";
+export const SETTINGS_STORAGE_KEY = "3dice.settings.v4";
+const PREVIOUS_SETTINGS_STORAGE_KEY = "3dice.settings.v3";
+const OLDER_SETTINGS_STORAGE_KEY = "3dice.settings.v2";
 const LEGACY_SETTINGS_STORAGE_KEY = "3dice.settings.v1";
 
 function hasId<T extends { id: string }>(
@@ -323,7 +332,7 @@ export function parseStoredSettings(raw: string | null): AppSettings {
     const candidate = JSON.parse(raw) as Partial<AppSettings>;
 
     return {
-      version: 3,
+      version: 4,
       advancedMode: booleanOrDefault(
         candidate.advancedMode,
         defaultAppSettings.advancedMode,
@@ -356,6 +365,9 @@ export function parseStoredSettings(raw: string | null): AppSettings {
         candidate.cameraGesturesEnabled,
         defaultAppSettings.cameraGesturesEnabled,
       ),
+      cameraView: hasId(cameraViewOptions, candidate.cameraView)
+        ? candidate.cameraView
+        : defaultAppSettings.cameraView,
       diceAppearanceId: hasId(
         diceAppearanceOptions,
         candidate.diceAppearanceId,
@@ -391,6 +403,7 @@ export function loadStoredSettings(): AppSettings {
     return parseStoredSettings(
       window.localStorage.getItem(SETTINGS_STORAGE_KEY) ??
         window.localStorage.getItem(PREVIOUS_SETTINGS_STORAGE_KEY) ??
+        window.localStorage.getItem(OLDER_SETTINGS_STORAGE_KEY) ??
         window.localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY),
     );
   } catch {
