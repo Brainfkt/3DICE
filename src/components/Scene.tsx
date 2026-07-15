@@ -91,21 +91,11 @@ const BASE_CAMERA_POSITION = new THREE.Vector3(
 );
 const BASE_LOOK_AT = new THREE.Vector3(...renderConfig.camera.lookAt);
 const BASE_CAMERA_OFFSET = BASE_CAMERA_POSITION.clone().sub(BASE_LOOK_AT);
-const BASE_CAMERA_FORWARD_HORIZONTAL = BASE_LOOK_AT.clone()
-  .sub(BASE_CAMERA_POSITION)
-  .setY(0)
-  .normalize();
-const BASE_CAMERA_RIGHT_HORIZONTAL = new THREE.Vector3()
-  .crossVectors(BASE_CAMERA_FORWARD_HORIZONTAL, new THREE.Vector3(0, 1, 0))
-  .normalize();
 const FREE_CAMERA_UP = new THREE.Vector3(0, 1, 0);
 const TOP_VIEW_LOOK_AT = new THREE.Vector3(
   ...renderConfig.camera.topView.lookAt,
 );
 const TOP_VIEW_UP = new THREE.Vector3(...renderConfig.camera.topView.up);
-const LOCKED_DICE_SIDE_DISTANCE = 3.35;
-const LOCKED_DICE_MIN_SIDE_DISTANCE = 1.5;
-const LOCKED_DICE_MIN_SPACING = 1.22;
 const MIN_CAMERA_ZOOM = 0.62;
 const MAX_CAMERA_ZOOM = 2.4;
 const AUTO_ZOOM_MAX = 2.15;
@@ -985,8 +975,6 @@ function DiceInstance({
   physicsDebugEnabled,
   physicsProfile,
   parked,
-  parkingAnchorRef,
-  parkingOffset,
   positionRef,
   resetKey,
   resetBeforeKeyboardThrow,
@@ -1009,8 +997,6 @@ function DiceInstance({
   physicsDebugEnabled: boolean;
   physicsProfile: PhysicsProfile;
   parked: boolean;
-  parkingAnchorRef: MutableRefObject<THREE.Vector3>;
-  parkingOffset: [number, number, number];
   positionRef: MutableRefObject<THREE.Vector3>;
   resetKey: number | string;
   resetBeforeKeyboardThrow: boolean;
@@ -1048,8 +1034,6 @@ function DiceInstance({
       keyboardThrowEnabled={keyboardThrowEnabled}
       keyboardThrowPlan={keyboardThrowPlan}
       parked={parked}
-      parkingAnchorRef={parkingAnchorRef}
-      parkingOffset={parkingOffset}
       resetBeforeKeyboardThrow={resetBeforeKeyboardThrow}
       throwPower={throwPower}
       physicsDebugEnabled={physicsDebugEnabled}
@@ -1168,8 +1152,6 @@ export function Scene({
   );
   const diceCenterRef = useRef(new THREE.Vector3());
   const diceSpreadRef = useRef(0);
-  const parkingAnchorWorldRef = useRef(new THREE.Vector3());
-  const hadParkedDiceRef = useRef(false);
   const isAnyDiceDraggingRef = useRef(false);
   const activeDiceIdsRef = useRef(new Set<number>());
   const pendingRelaunchRef = useRef(false);
@@ -1220,55 +1202,11 @@ export function Scene({
     .slice(0, diceCount)
     .map((locked) => (locked ? "1" : "0"))
     .join("");
-  const hasParkedDice = advancedMode && lockedDiceSignature.includes("1");
-
-  if (hasParkedDice && !hadParkedDiceRef.current) {
-    parkingAnchorWorldRef.current.copy(diceCenterRef.current);
-  }
-  hadParkedDiceRef.current = hasParkedDice;
-
   useEffect(() => {
     const handleResize = () => setViewportAspect(getViewportAspect());
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-  const parkingOffsets = useMemo(() => {
-    const lockedIndices = Array.from(
-      { length: diceCount },
-      (_, index) => index,
-    ).filter((index) => advancedMode && Boolean(lockedDice[index]));
-    const dieHeight = getDieInitialHeight(diceType);
-    const spacing = Math.max(LOCKED_DICE_MIN_SPACING, dieHeight * 1.72);
-    const sideDistance = clampNumber(
-      LOCKED_DICE_SIDE_DISTANCE * viewportAspect,
-      LOCKED_DICE_MIN_SIDE_DISTANCE,
-      LOCKED_DICE_SIDE_DISTANCE,
-    );
-
-    return diceTransforms.map((transform, diceIndex) => {
-      const lockedRank = lockedIndices.indexOf(diceIndex);
-      if (lockedRank === -1) return transform.position;
-
-      // The row direction is based on the default camera only once. Its world
-      // anchor is captured when the first die is locked, then remains fixed.
-      const rowOffset = (lockedRank - (lockedIndices.length - 1) / 2) * spacing;
-      const offset = new THREE.Vector3()
-        .addScaledVector(
-          BASE_CAMERA_RIGHT_HORIZONTAL,
-          -sideDistance,
-        )
-        .addScaledVector(BASE_CAMERA_FORWARD_HORIZONTAL, rowOffset);
-      offset.y = dieHeight;
-      return offset.toArray() as [number, number, number];
-    });
-  }, [
-    advancedMode,
-    diceCount,
-    diceTransforms,
-    diceType,
-    lockedDice,
-    viewportAspect,
-  ]);
   const setIsSceneActive = useCallback(
     (active: boolean) => {
       setSceneActivity({ active, epoch: simulationEpoch });
@@ -1577,8 +1515,6 @@ export function Scene({
             keyboardThrowEnabled={throwableDiceIds.includes(diceIndex)}
             keyboardThrowPlan={topViewThrowPlans[diceIndex] ?? null}
             parked={advancedMode && Boolean(lockedDice[diceIndex])}
-            parkingAnchorRef={parkingAnchorWorldRef}
-            parkingOffset={parkingOffsets[diceIndex]}
             onGrab={handleDiceGrab}
             onImpact={handleDiceImpact}
             physicsDebugEnabled={physicsDebugEnabled && diceIndex === 0}

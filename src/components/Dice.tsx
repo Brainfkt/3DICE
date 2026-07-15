@@ -73,8 +73,6 @@ type DiceProps = {
   keyboardThrowEnabled: boolean;
   keyboardThrowPlan?: TopViewThrowPlan | null;
   parked: boolean;
-  parkingAnchorRef: MutableRefObject<THREE.Vector3>;
-  parkingOffset: [number, number, number];
   resetBeforeKeyboardThrow: boolean;
   throwPower: number;
   physicsDebugEnabled?: boolean;
@@ -165,8 +163,6 @@ export function Dice({
   keyboardThrowEnabled,
   keyboardThrowPlan = null,
   parked,
-  parkingAnchorRef,
-  parkingOffset,
   resetBeforeKeyboardThrow,
   throwPower,
   physicsDebugEnabled = false,
@@ -206,7 +202,6 @@ export function Dice({
     position: THREE.Vector3;
     rotation: THREE.Quaternion;
   } | null>(null);
-  const parkedWorldPosition = useMemo(() => new THREE.Vector3(), []);
   const lastImpactAt = useRef(-Infinity);
   const dragTargetDirtyRef = useRef(false);
   const grabbedLocalAnchor = useRef(new THREE.Vector3());
@@ -773,21 +768,19 @@ export function Dice({
         };
       }
 
-      parkedWorldPosition.set(
-        parkingAnchorRef.current.x + parkingOffset[0],
-        preParkTransformRef.current?.position.y ?? parkingOffset[1],
-        parkingAnchorRef.current.z + parkingOffset[2],
-      );
-      body.setTranslation(parkedWorldPosition, false);
-      if (preParkTransformRef.current) {
-        body.setRotation(preParkTransformRef.current.rotation, false);
-      }
+      const lockedTransform = preParkTransformRef.current;
+      if (!lockedTransform) return;
+
+      // A locked die is a true stationary obstacle. Preserve the exact settled
+      // pose instead of teleporting it to a parking row or driving it through a
+      // kinematic target, both of which can create artificial contact energy.
+      body.setTranslation(lockedTransform.position, false);
+      body.setRotation(lockedTransform.rotation, false);
       body.setLinvel({ x: 0, y: 0, z: 0 }, true);
       body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      trackedPosition?.current.copy(parkedWorldPosition);
+      trackedPosition?.current.copy(lockedTransform.position);
       hasActiveThrow.current = false;
       activePointerId.current = null;
-      body.sleep();
       invalidate();
     } else if (wasParkedRef.current && preParkTransformRef.current) {
       const previous = preParkTransformRef.current;
@@ -805,9 +798,6 @@ export function Dice({
   }, [
     invalidate,
     parked,
-    parkedWorldPosition,
-    parkingAnchorRef,
-    parkingOffset,
     trackedPosition,
   ]);
 
@@ -1015,7 +1005,7 @@ export function Dice({
       ) : null}
       <RigidBody
         ref={bodyRef}
-        type={parked ? "kinematicPosition" : "dynamic"}
+        type={parked ? "fixed" : "dynamic"}
         additionalSolverIterations={
           physicsSimulationConfig.additionalSolverIterations
         }

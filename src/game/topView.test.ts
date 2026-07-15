@@ -18,15 +18,17 @@ describe("top view layout", () => {
     );
   });
 
-  it("raises the mobile camera enough for the centered dice formation", () => {
+  it("zooms mobile portrait out and expands its physical collision arena", () => {
     const layout = getTopViewLayout(390 / 844);
 
     expect(layout.cameraDistance).toBeGreaterThan(
-      renderConfig.camera.topView.baseDistance,
+      renderConfig.camera.topView.baseDistance * 1.45,
     );
-    expect(layout.boundaryHalfWidth).toBeGreaterThanOrEqual(
-      physicsWorldConfig.topViewBounds.minimumHalfWidth,
+    expect(layout.visibleHalfWidth).toBeCloseTo(
+      renderConfig.camera.topView.minimumVisibleHalfWidth,
     );
+    expect(layout.boundaryHalfWidth).toBeGreaterThan(2.5);
+    expect(layout.boundaryHalfDepth).toBeGreaterThan(6);
     expect(layout.boundaryHalfDepth).toBeGreaterThan(layout.boundaryHalfWidth);
     expect(layout.cameraPosition).toEqual([0, layout.cameraDistance, 0]);
   });
