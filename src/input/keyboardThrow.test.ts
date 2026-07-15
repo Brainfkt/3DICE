@@ -87,6 +87,23 @@ describe("getDiceSpaceThrowMode", () => {
       getDiceSpaceThrowMode({ diceCount: 4, hasActiveDice: true }),
     ).toBe("reset-and-throw");
   });
+
+  it("can reset a single die before every constrained-view throw", () => {
+    expect(
+      getDiceSpaceThrowMode({
+        diceCount: 1,
+        hasActiveDice: false,
+        resetBeforeThrow: true,
+      }),
+    ).toBe("reset-and-throw");
+    expect(
+      getDiceSpaceThrowMode({
+        diceCount: 1,
+        hasActiveDice: true,
+        resetBeforeThrow: true,
+      }),
+    ).toBe("reset-and-throw");
+  });
 });
 
 describe("getTouchThrowTapAction", () => {

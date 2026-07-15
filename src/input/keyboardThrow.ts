@@ -45,11 +45,13 @@ export function getAppShortcutAction({
 export function getDiceSpaceThrowMode({
   diceCount,
   hasActiveDice,
+  resetBeforeThrow = false,
 }: {
   diceCount: number;
   hasActiveDice: boolean;
+  resetBeforeThrow?: boolean;
 }): DiceSpaceThrowMode {
-  if (diceCount > 1) return "reset-and-throw";
+  if (diceCount > 1 || resetBeforeThrow) return "reset-and-throw";
   return hasActiveDice ? "blocked" : "throw";
 }
 
