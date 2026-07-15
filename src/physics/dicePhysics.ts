@@ -52,6 +52,14 @@ export type KeyboardThrowInput = {
   powerScale?: number;
 };
 
+export type TopViewThrowInput = {
+  direction: VectorComponents;
+  gravityY: number;
+  powerScale?: number;
+  random?: () => number;
+  targetDistance: number;
+};
+
 export type ReleaseImpulseLimits = {
   pointImpulseScale: number;
   maxPointSpeedDelta: number;
@@ -308,6 +316,61 @@ export function getKeyboardThrowVectors({
   const wristTorqueImpulse = new THREE.Vector3(
     pointVelocity.z * physicsConfig.throw.wristTorqueImpulse,
     horizontalSpeed * physicsConfig.throw.tumbleTorqueImpulse * spinDirection,
+    -pointVelocity.x * physicsConfig.throw.wristTorqueImpulse,
+  );
+
+  clampVectorLength(
+    wristTorqueImpulse,
+    physicsConfig.throw.maxWristTorqueImpulse,
+  );
+
+  return {
+    pointVelocity: toComponents(pointVelocity),
+    wristTorqueImpulse: toComponents(wristTorqueImpulse),
+  };
+}
+
+export function getTopViewThrowVectors({
+  direction,
+  gravityY,
+  powerScale = 1,
+  random = Math.random,
+  targetDistance,
+}: TopViewThrowInput) {
+  const entry = physicsConfig.throw.topViewEntry;
+  const forward = toVector3(direction).setY(0);
+
+  if (forward.lengthSq() < Number.EPSILON) {
+    forward.set(0, 0, -1);
+  } else {
+    forward.normalize();
+  }
+
+  const right = new THREE.Vector3().crossVectors(
+    forward,
+    new THREE.Vector3(0, 1, 0),
+  );
+  const lateralSample = clampNumber(random(), 0, 1) * 2 - 1;
+  const powerSample = clampNumber(random(), 0, 1) * 2 - 1;
+  const spinDirection = random() < 0.5 ? -1 : 1;
+  const safePowerScale = clampNumber(powerScale, 0.65, 1.35);
+  const horizontalSpeed =
+    entry.forwardVelocity *
+    safePowerScale *
+    (1 + powerSample * entry.powerJitter);
+  const flightTime =
+    Math.max(Number.isFinite(targetDistance) ? targetDistance : 0, 0.001) /
+    horizontalSpeed;
+  const pointVelocity = forward
+    .multiplyScalar(horizontalSpeed)
+    .addScaledVector(right, lateralSample * entry.lateralJitterVelocity)
+    .setY(Math.abs(gravityY) * flightTime * 0.5);
+  const horizontalVelocity = Math.hypot(pointVelocity.x, pointVelocity.z);
+  const wristTorqueImpulse = new THREE.Vector3(
+    pointVelocity.z * physicsConfig.throw.wristTorqueImpulse,
+    horizontalVelocity *
+      physicsConfig.throw.tumbleTorqueImpulse *
+      spinDirection,
     -pointVelocity.x * physicsConfig.throw.wristTorqueImpulse,
   );
 

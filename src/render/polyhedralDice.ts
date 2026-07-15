@@ -3,14 +3,21 @@ import { DiceTypeId } from "../settings/config";
 import { DiceRotation, detectDiceFace } from "../utils/detectDiceFace";
 import {
   createEngravedPolyhedralGeometries,
+  EngravingFaceInput,
   EngravingMetric,
 } from "./polyhedralEngraving";
+import { createRoundedPolyhedralSurface } from "./polyhedralRounding";
 
 export type PolyhedralFace = {
   center: THREE.Vector3;
   localNormal: THREE.Vector3;
   value: number;
   vertices: readonly THREE.Vector3[];
+};
+
+export type PolyhedralResultVertex = {
+  localPosition: THREE.Vector3;
+  value: number;
 };
 
 export type PolyhedralDieDefinition = {
@@ -22,14 +29,20 @@ export type PolyhedralDieDefinition = {
   geometry: THREE.BufferGeometry;
   initialHeight: number;
   labelHeight: number;
+  resultVertices: readonly PolyhedralResultVertex[];
 };
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const definitions = new Map<DiceTypeId, PolyhedralDieDefinition>();
 
-function uniqueVertices(geometry: THREE.BufferGeometry) {
+// Keep the sharper silhouettes slightly larger than their original size while
+// remaining a touch less massive than the rounded d6.
+export const POLYHEDRAL_DIE_SCALE = 1.18;
+export const POLYHEDRAL_EDGE_INSET_RATIO = 0.065;
+
+function getUniqueGeometryVertices(geometry: THREE.BufferGeometry) {
   const position = geometry.getAttribute("position");
-  const values: number[] = [];
+  const vertices: THREE.Vector3[] = [];
   const seen = new Set<string>();
 
   for (let index = 0; index < position.count; index += 1) {
@@ -39,10 +52,68 @@ function uniqueVertices(geometry: THREE.BufferGeometry) {
     const key = `${x.toFixed(5)}:${y.toFixed(5)}:${z.toFixed(5)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    values.push(x, y, z);
+    vertices.push(new THREE.Vector3(x, y, z));
   }
 
-  return new Float32Array(values);
+  return vertices;
+}
+
+function createD4ResultVertices(geometry: THREE.BufferGeometry) {
+  return getUniqueGeometryVertices(geometry)
+    .sort((left, right) => {
+      const leftAngle = Math.atan2(left.z, left.x);
+      const rightAngle = Math.atan2(right.z, right.x);
+      return right.y - left.y || leftAngle - rightAngle;
+    })
+    .map((localPosition, index) => ({
+      localPosition,
+      value: index + 1,
+    }));
+}
+
+function findResultVertex(
+  point: THREE.Vector3,
+  resultVertices: readonly PolyhedralResultVertex[],
+) {
+  const result = resultVertices.find(
+    (candidate) => candidate.localPosition.distanceToSquared(point) < 1e-8,
+  );
+  if (!result) throw new Error("Unable to match d4 face corner to result vertex");
+  return result;
+}
+
+function mergeNonIndexedGeometries(
+  geometries: readonly THREE.BufferGeometry[],
+) {
+  const merged = new THREE.BufferGeometry();
+
+  for (const attributeName of ["position", "normal", "uv"] as const) {
+    const attributes = geometries.map(
+      (geometry) => geometry.getAttribute(attributeName) as THREE.BufferAttribute,
+    );
+    const itemSize = attributes[0].itemSize;
+    const values = new Float32Array(
+      attributes.reduce(
+        (count, attribute) => count + attribute.count * itemSize,
+        0,
+      ),
+    );
+    let offset = 0;
+
+    for (const attribute of attributes) {
+      values.set(attribute.array as Float32Array, offset);
+      offset += attribute.count * itemSize;
+    }
+
+    merged.setAttribute(
+      attributeName,
+      new THREE.BufferAttribute(values, itemSize),
+    );
+  }
+
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  return merged;
 }
 
 function uniquePointList(points: readonly THREE.Vector3[]) {
@@ -225,7 +296,8 @@ function createD10Geometry(radius: number) {
 }
 
 function createGeometry(type: Exclude<DiceTypeId, "d6">) {
-  const radius = type === "d4" ? 0.73 : type === "d10" ? 0.7 : 0.66;
+  const baseRadius = type === "d4" ? 0.73 : type === "d10" ? 0.7 : 0.66;
+  const radius = baseRadius * POLYHEDRAL_DIE_SCALE;
   switch (type) {
     case "d4":
       return new THREE.TetrahedronGeometry(radius, 0);
@@ -254,7 +326,7 @@ function createDefinition(type: Exclude<DiceTypeId, "d6">) {
 
   geometry.computeBoundingSphere();
   const initialHeight = (geometry.boundingSphere?.radius ?? 0.7) + 0.035;
-  const labelHeight = type === "d20"
+  const baseLabelHeight = type === "d20"
     ? 0.27
     : type === "d12"
       ? 0.3
@@ -263,23 +335,54 @@ function createDefinition(type: Exclude<DiceTypeId, "d6">) {
         : type === "d8"
           ? 0.32
           : 0.34;
+  const labelHeight = baseLabelHeight * POLYHEDRAL_DIE_SCALE;
   const faces = rawFaces.map((face, index) => ({ ...face, value: index + 1 }));
-  const engraved = createEngravedPolyhedralGeometries({
-    depth: 0.022,
+  const resultVertices = type === "d4" ? createD4ResultVertices(geometry) : [];
+  const rounded = createRoundedPolyhedralSurface(
     faces,
-    margin: 0.018,
+    POLYHEDRAL_EDGE_INSET_RATIO,
+  );
+  const engravingFaces: readonly EngravingFaceInput[] = type === "d4"
+    ? rounded.faces.map((face, faceIndex) => ({
+        ...face,
+        labels: face.vertices.map((roundedVertex, vertexIndex) => {
+          const resultVertex = findResultVertex(
+            faces[faceIndex].vertices[vertexIndex],
+            resultVertices,
+          );
+          return {
+            position: face.center.clone().lerp(roundedVertex, 0.48),
+            requestedHeight: 0.205 * POLYHEDRAL_DIE_SCALE,
+            up: roundedVertex.clone().sub(face.center).normalize(),
+            value: resultVertex.value,
+          };
+        }),
+      }))
+    : rounded.faces;
+  const engraved = createEngravedPolyhedralGeometries({
+    depth: 0.022 * POLYHEDRAL_DIE_SCALE,
+    faces: engravingFaces,
+    margin: 0.018 * POLYHEDRAL_DIE_SCALE,
     requestedHeight: labelHeight,
   });
+  const bodyGeometry = mergeNonIndexedGeometries([
+    engraved.body,
+    rounded.edgeGeometry,
+  ]);
+  bodyGeometry.name = "polyhedral-dice-rounded-body";
+  engraved.body.dispose();
+  rounded.edgeGeometry.dispose();
 
   return {
-    bodyGeometry: engraved.body,
-    colliderVertices: uniqueVertices(geometry),
+    bodyGeometry,
+    colliderVertices: rounded.colliderVertices,
     engravingGeometry: engraved.engraving,
     engravingMetrics: engraved.metrics,
     faces,
     geometry,
     initialHeight,
     labelHeight,
+    resultVertices,
   } satisfies PolyhedralDieDefinition;
 }
 
@@ -306,6 +409,24 @@ export function detectDieFace(type: DiceTypeId, rotation: DiceRotation) {
     rotation.w,
   );
   const definition = getPolyhedralDieDefinition(type)!;
+
+  if (type === "d4") {
+    let result = definition.resultVertices[0];
+    let highestPoint = -Infinity;
+
+    for (const vertex of definition.resultVertices) {
+      const height = vertex.localPosition
+        .clone()
+        .applyQuaternion(quaternion)
+        .dot(WORLD_UP);
+      if (height <= highestPoint) continue;
+      highestPoint = height;
+      result = vertex;
+    }
+
+    return result.value;
+  }
+
   let result = definition.faces[0];
   let strongestDot = -Infinity;
 

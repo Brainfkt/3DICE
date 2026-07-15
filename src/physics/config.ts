@@ -42,6 +42,11 @@ const sharedThrow = {
     releaseAngularSoftLimit: 14,
     maxReleaseAngularSpeed: 18,
   },
+  topViewEntry: {
+    forwardVelocity: 14,
+    lateralJitterVelocity: 0.35,
+    powerJitter: 0.04,
+  },
 } as const;
 
 const sharedDrag = {
@@ -70,6 +75,16 @@ export const physicsWorldConfig = {
   diceInitialRotationEuler: [0.1, -0.28, 0.18] as [number, number, number],
   diceLayoutSpacing: 1.42,
   openWorldHalfExtent: 1024,
+  topViewBounds: {
+    entrySafetyInset: 0.22,
+    entrySpawnMargin: 0.9,
+    entryTargetRadius: 0.58,
+    minimumHalfDepth: 3.6,
+    minimumHalfWidth: 1.85,
+    screenMargin: 0.55,
+    wallHeight: 6.4,
+    wallThickness: 0.36,
+  },
 } as const;
 
 const diceLayoutCoordinates = {

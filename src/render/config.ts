@@ -4,6 +4,13 @@ export const renderConfig = {
   camera: {
     position: [7.1, 5, 8.2] as [number, number, number],
     lookAt: [0, 0.36, 0] as [number, number, number],
+    topView: {
+      baseDistance: 11.2,
+      fov: 46,
+      lookAt: [0, 0, 0] as [number, number, number],
+      minimumVisibleHalfWidth: 2.4,
+      up: [0, 0, -1] as [number, number, number],
+    },
   },
   canvas: {
     dprRange: [1, 1.5] as [number, number],

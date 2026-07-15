@@ -7,6 +7,7 @@ import {
   createSettleState,
   getDragTargetFromPointerDelta,
   getKeyboardThrowVectors,
+  getTopViewThrowVectors,
   getLocalPointFromWorldOffset,
   getLimitedBodyMotion,
   getNextSettleState,
@@ -287,6 +288,46 @@ describe("getKeyboardThrowVectors", () => {
     );
 
     expect(torque.dot(forwardRollAxis)).toBeGreaterThan(0);
+  });
+});
+
+describe("getTopViewThrowVectors", () => {
+  it("aims toward the planned center and adapts its arc to the distance", () => {
+    const short = getTopViewThrowVectors({
+      direction: { x: 1, y: 0, z: 0 },
+      gravityY: -38,
+      random: () => 0.5,
+      targetDistance: 3.5,
+    });
+    const long = getTopViewThrowVectors({
+      direction: { x: 1, y: 0, z: 0 },
+      gravityY: -38,
+      random: () => 0.5,
+      targetDistance: 6,
+    });
+
+    expect(short.pointVelocity.x).toBeCloseTo(
+      physicsConfig.throw.topViewEntry.forwardVelocity,
+    );
+    expect(short.pointVelocity.z).toBeCloseTo(0);
+    expect(long.pointVelocity.y).toBeGreaterThan(short.pointVelocity.y);
+    expect(
+      (2 * long.pointVelocity.x * long.pointVelocity.y) / 38,
+    ).toBeCloseTo(6, 5);
+  });
+
+  it("keeps malformed directions and distances finite", () => {
+    const result = getTopViewThrowVectors({
+      direction: { x: 0, y: 1, z: 0 },
+      gravityY: -54,
+      random: () => 0.5,
+      targetDistance: Number.NaN,
+    });
+
+    expect(Object.values(result.pointVelocity).every(Number.isFinite)).toBe(true);
+    expect(
+      Object.values(result.wristTorqueImpulse).every(Number.isFinite),
+    ).toBe(true);
   });
 });
 

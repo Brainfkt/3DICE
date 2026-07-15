@@ -5,11 +5,13 @@ import {
   detectDieFace,
   getDieInitialHeight,
   getPolyhedralDieDefinition,
+  POLYHEDRAL_DIE_SCALE,
 } from "./polyhedralDice";
 
 const polyhedralTypes = diceTypeOptions
   .map((option) => option.id)
   .filter((type): type is Exclude<DiceTypeId, "d6"> => type !== "d6");
+const faceReadTypes = polyhedralTypes.filter((type) => type !== "d4");
 
 function getPlanarFaceAreas(type: Exclude<DiceTypeId, "d6">) {
   const definition = getPolyhedralDieDefinition(type)!;
@@ -60,6 +62,40 @@ function expectCompleteGeometry(geometry: THREE.BufferGeometry) {
 }
 
 describe("polyhedral dice", () => {
+  it.each(polyhedralTypes)("keeps the %s silhouette near the d6 visual envelope", (type) => {
+    const definition = getPolyhedralDieDefinition(type)!;
+    const d6BoundingRadius = (Math.sqrt(3) * 1.12) / 2;
+    const radius = definition.geometry.boundingSphere!.radius;
+
+    expect(radius / d6BoundingRadius).toBeGreaterThan(0.79);
+    expect(radius / d6BoundingRadius).toBeLessThan(0.9);
+  });
+
+  it.each(polyhedralTypes)("uses a subtly rounded visual and physical envelope on %s", (type) => {
+    const definition = getPolyhedralDieDefinition(type)!;
+    const sharpRadius = definition.geometry.boundingSphere!.radius;
+    const colliderPosition = new THREE.BufferAttribute(
+      definition.colliderVertices,
+      3,
+    );
+    let roundedRadius = 0;
+
+    for (let index = 0; index < colliderPosition.count; index += 1) {
+      roundedRadius = Math.max(
+        roundedRadius,
+        new THREE.Vector3()
+          .fromBufferAttribute(colliderPosition, index)
+          .length(),
+      );
+    }
+
+    expect(roundedRadius / sharpRadius).toBeGreaterThan(0.94);
+    expect(roundedRadius / sharpRadius).toBeLessThan(0.995);
+    expect(definition.colliderVertices.length / 3).toBeGreaterThan(
+      definition.geometry.getAttribute("position").count,
+    );
+  });
+
   it.each(polyhedralTypes)("creates a convex labelled %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
     expect(definition.faces).toHaveLength(Number(type.slice(1)));
@@ -71,7 +107,7 @@ describe("polyhedral dice", () => {
 
   it("builds d10 as a pentagonal trapezohedron with ten kite faces", () => {
     const definition = getPolyhedralDieDefinition("d10")!;
-    const vertexCount = definition.colliderVertices.length / 3;
+    const vertexCount = definition.geometry.getAttribute("position").count;
     const triangleCount = definition.geometry.index!.count / 3;
 
     expect(vertexCount).toBe(12);
@@ -86,10 +122,15 @@ describe("polyhedral dice", () => {
     const definition = getPolyhedralDieDefinition(type)!;
     expectCompleteGeometry(definition.bodyGeometry);
     expectCompleteGeometry(definition.engravingGeometry);
-    expect(definition.engravingMetrics).toHaveLength(definition.faces.length);
+    expect(definition.engravingMetrics).toHaveLength(
+      type === "d4" ? 12 : definition.faces.length,
+    );
 
     for (const metric of definition.engravingMetrics) {
-      expect(metric.surfacePlane - metric.bottomPlane).toBeCloseTo(0.022, 5);
+      expect(metric.surfacePlane - metric.bottomPlane).toBeCloseTo(
+        0.022 * POLYHEDRAL_DIE_SCALE,
+        5,
+      );
       expect(metric.glyphHeight).toBeGreaterThan(0.14);
       expect(metric.glyphHeight).toBeLessThanOrEqual(definition.labelHeight + 1e-6);
       expect(metric.glyphWidth).toBeGreaterThan(0.03);
@@ -97,7 +138,31 @@ describe("polyhedral dice", () => {
     }
   });
 
-  it.each(polyhedralTypes)("detects every labelled face of %s", (type) => {
+  it("repeats each d4 result on the three faces adjacent to its vertex", () => {
+    const definition = getPolyhedralDieDefinition("d4")!;
+
+    expect(definition.resultVertices).toHaveLength(4);
+    for (const value of [1, 2, 3, 4]) {
+      expect(
+        definition.engravingMetrics.filter((metric) => metric.value === value),
+      ).toHaveLength(3);
+    }
+  });
+
+  it("detects the d4 result from its highest labelled vertex", () => {
+    const definition = getPolyhedralDieDefinition("d4")!;
+    const up = new THREE.Vector3(0, 1, 0);
+
+    for (const vertex of definition.resultVertices) {
+      const rotation = new THREE.Quaternion().setFromUnitVectors(
+        vertex.localPosition.clone().normalize(),
+        up,
+      );
+      expect(detectDieFace("d4", rotation)).toBe(vertex.value);
+    }
+  });
+
+  it.each(faceReadTypes)("detects every labelled face of %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
     const up = new THREE.Vector3(0, 1, 0);
 

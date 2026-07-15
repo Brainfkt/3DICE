@@ -7,9 +7,17 @@ import {
 
 export type EngravingFaceInput = {
   center: THREE.Vector3;
+  labels?: readonly EngravingLabelInput[];
   localNormal: THREE.Vector3;
   value: number;
   vertices: readonly THREE.Vector3[];
+};
+
+export type EngravingLabelInput = {
+  position: THREE.Vector3;
+  requestedHeight?: number;
+  up: THREE.Vector3;
+  value: number;
 };
 
 export type EngravingMetric = {
@@ -182,10 +190,25 @@ function fitNumberContours(
   requestedHeight: number,
   faceContour: readonly THREE.Vector2[],
   margin: number,
+  offset = new THREE.Vector2(),
+  rotation = 0,
 ) {
   let height = requestedHeight;
   for (let attempt = 0; attempt < 36; attempt += 1) {
     const glyphs = createNumberGlyphs(value, height);
+    const cosine = Math.cos(rotation);
+    const sine = Math.sin(rotation);
+    const points = glyphs
+      .flatMap((glyph) => [glyph.contour, ...glyph.holes])
+      .flat();
+    for (const point of points) {
+      const x = point.x;
+      const y = point.y;
+      point.set(
+        x * cosine - y * sine + offset.x,
+        x * sine + y * cosine + offset.y,
+      );
+    }
     if (glyphsFitFace(glyphs, faceContour, margin)) {
       return { glyphs, height };
     }
@@ -382,12 +405,32 @@ export function createEngravedPolyhedralGeometries({
     const faceContour = face.vertices.map((vertex) =>
       projectToFace(vertex, face, basis),
     );
-    const { glyphs, height } = fitNumberContours(
-      face.value,
-      requestedHeight,
-      faceContour,
-      margin,
-    );
+    const labels = face.labels?.length
+      ? face.labels
+      : [{
+          position: face.center,
+          requestedHeight,
+          up: basis.v,
+          value: face.value,
+        }];
+    const fittedLabels = labels.map((label) => {
+      const up = label.up.clone().projectOnPlane(face.localNormal);
+      if (up.lengthSq() <= Number.EPSILON) up.copy(basis.v);
+      up.normalize();
+      const up2d = new THREE.Vector2(up.dot(basis.u), up.dot(basis.v));
+      const rotation = Math.atan2(-up2d.x, up2d.y);
+      const offset = projectToFace(label.position, face, basis);
+      const fitted = fitNumberContours(
+        label.value,
+        label.requestedHeight ?? requestedHeight,
+        faceContour,
+        margin,
+        offset,
+        rotation,
+      );
+      return { ...fitted, value: label.value };
+    });
+    const glyphs = fittedLabels.flatMap((label) => label.glyphs);
     const uvFor = createUvMapper(faceContour);
     appendPlanarTriangles(
       body,
@@ -440,18 +483,23 @@ export function createEngravedPolyhedralGeometries({
       );
     }
 
-    const contours = glyphs.flatMap((glyph) => [glyph.contour, ...glyph.holes]);
-    const glyphPoints = contours.flat();
-    const bounds = getBounds(glyphPoints);
     const surfacePlane = face.localNormal.dot(face.center);
-    metrics.push({
-      bottomPlane: surfacePlane - depth,
-      contourCount: contours.length,
-      glyphHeight: bounds.maxY - bounds.minY,
-      glyphWidth: bounds.maxX - bounds.minX,
-      surfacePlane,
-      value: face.value,
-    });
+    for (const fittedLabel of fittedLabels) {
+      const contours = fittedLabel.glyphs.flatMap((glyph) => [
+        glyph.contour,
+        ...glyph.holes,
+      ]);
+      const glyphPoints = contours.flat();
+      const bounds = getBounds(glyphPoints);
+      metrics.push({
+        bottomPlane: surfacePlane - depth,
+        contourCount: contours.length,
+        glyphHeight: bounds.maxY - bounds.minY,
+        glyphWidth: bounds.maxX - bounds.minX,
+        surfacePlane,
+        value: fittedLabel.value,
+      });
+    }
   }
 
   return {

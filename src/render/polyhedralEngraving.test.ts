@@ -84,4 +84,47 @@ describe("polyhedral numeral engraving", () => {
       5,
     );
   });
+
+  it("engraves several independently oriented labels on one face", () => {
+    const result = createEngravedPolyhedralGeometries({
+      depth: 0.03,
+      faces: [
+        {
+          center: new THREE.Vector3(0, 0, 0),
+          labels: [
+            {
+              position: new THREE.Vector3(-0.4, 0, 0),
+              requestedHeight: 0.28,
+              up: new THREE.Vector3(0, 1, 0),
+              value: 2,
+            },
+            {
+              position: new THREE.Vector3(0.4, 0, 0),
+              requestedHeight: 0.28,
+              up: new THREE.Vector3(1, 0, 0),
+              value: 3,
+            },
+          ],
+          localNormal: new THREE.Vector3(0, 0, 1),
+          value: 0,
+          vertices: [
+            new THREE.Vector3(-1, -1, 0),
+            new THREE.Vector3(1, -1, 0),
+            new THREE.Vector3(1, 1, 0),
+            new THREE.Vector3(-1, 1, 0),
+          ],
+        },
+      ],
+      margin: 0.1,
+      requestedHeight: 0.8,
+    });
+
+    expect(result.metrics.map((metric) => metric.value)).toEqual([2, 3]);
+    expectFiniteAttribute(
+      result.body.getAttribute("position") as THREE.BufferAttribute,
+    );
+    expectFiniteAttribute(
+      result.engraving.getAttribute("position") as THREE.BufferAttribute,
+    );
+  });
 });
