@@ -183,25 +183,38 @@ function extractPlanarFaces(geometry: THREE.BufferGeometry) {
 
 function createD10Geometry(radius: number) {
   const vertices: number[] = [0, radius, 0, 0, -radius, 0];
-  const ringRadius = radius * 0.92;
-  const ringY = 0;
   const sides = 5;
+  const beltVertexCount = sides * 2;
+  const beltRadius = radius * 0.88;
+  const halfStepAngle = Math.PI / sides;
+  const beltOffset =
+    radius *
+    ((1 - Math.cos(halfStepAngle)) / (1 + Math.cos(halfStepAngle)));
 
-  for (let index = 0; index < sides; index += 1) {
-    const angle = (index / sides) * Math.PI * 2 - Math.PI / 2;
+  // A d10 is a pentagonal trapezohedron: two poles plus a ten-vertex
+  // zig-zag belt. The alternating belt heights make each pair of triangles
+  // exactly coplanar, producing ten congruent kite faces rather than the ten
+  // triangular faces of a pentagonal bipyramid.
+  for (let index = 0; index < beltVertexCount; index += 1) {
+    const angle = (index / beltVertexCount) * Math.PI * 2 - Math.PI / 2;
     vertices.push(
-      Math.cos(angle) * ringRadius,
-      ringY,
-      Math.sin(angle) * ringRadius,
+      Math.cos(angle) * beltRadius,
+      index % 2 === 0 ? -beltOffset : beltOffset,
+      Math.sin(angle) * beltRadius,
     );
   }
 
   const indices: number[] = [];
-  for (let index = 0; index < sides; index += 1) {
+  for (let index = 0; index < beltVertexCount; index += 1) {
     const current = 2 + index;
-    const next = 2 + ((index + 1) % sides);
-    indices.push(0, next, current);
-    indices.push(1, current, next);
+    const previous = 2 + ((index - 1 + beltVertexCount) % beltVertexCount);
+    const next = 2 + ((index + 1) % beltVertexCount);
+
+    if (index % 2 === 0) {
+      indices.push(0, next, current, 0, current, previous);
+    } else {
+      indices.push(1, previous, current, 1, current, next);
+    }
   }
 
   const geometry = new THREE.BufferGeometry();

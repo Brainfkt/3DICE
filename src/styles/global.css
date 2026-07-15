@@ -535,27 +535,136 @@ button {
   border-top: 1px solid rgba(239, 230, 205, 0.055);
 }
 
-.power-control {
+.throw-power-gauge {
+  --power-position: 50%;
+  pointer-events: auto;
+  position: absolute;
+  top: 51%;
+  right: clamp(17px, 3.8vw, 40px);
   display: grid;
-  gap: 7px;
-  padding: 2px 0 10px;
+  justify-items: center;
+  transform: translateY(-50%);
+  width: 46px;
+  color: rgba(242, 236, 220, 0.62);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.power-control > span {
-  display: flex;
-  justify-content: space-between;
-  color: rgba(242, 236, 220, 0.72);
-  font-size: 11px;
+.power-gauge-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.power-control output {
-  color: rgba(255, 249, 232, 0.9);
+.power-gauge-shell {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 172px;
+  filter: drop-shadow(0 5px 12px rgba(0, 0, 0, 0.22));
+}
+
+.power-gauge-cone {
+  position: absolute;
+  inset: 7px 10px;
+  clip-path: polygon(0 0, 100% 0, 61% 100%, 39% 100%);
+  background: linear-gradient(
+    to top,
+    rgba(71, 174, 111, 0.72) 0%,
+    rgba(156, 187, 86, 0.72) 38%,
+    rgba(222, 165, 69, 0.74) 68%,
+    rgba(211, 70, 57, 0.78) 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 249, 232, 0.13);
+  opacity: 0.68;
+  transition: opacity 150ms ease, filter 150ms ease;
+}
+
+.power-gauge-cone::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    rgba(4, 5, 4, 0.18),
+    rgba(255, 255, 255, 0.13) 45%,
+    rgba(4, 5, 4, 0.22)
+  );
+}
+
+.power-gauge-marker {
+  position: absolute;
+  left: 50%;
+  bottom: var(--power-position);
+  width: 31px;
+  height: 1px;
+  transform: translate(-50%, 50%);
+  border-radius: 999px;
+  background: rgba(255, 250, 236, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(8, 9, 8, 0.28),
+    0 0 7px rgba(255, 246, 220, 0.32);
+  transition: bottom 90ms linear;
+}
+
+.power-gauge-marker-track {
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+  inset: 7px 0;
+}
+
+.power-gauge-shell input {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 46px;
+  height: 172px;
+  margin: 0;
+  opacity: 0;
+  cursor: ns-resize;
+  direction: rtl;
+  touch-action: none;
+  writing-mode: vertical-lr;
+}
+
+.throw-power-gauge output {
+  min-width: 30px;
+  margin-top: 2px;
+  color: rgba(255, 249, 232, 0.68);
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
+  font-weight: 570;
+  letter-spacing: 0.035em;
+  text-align: center;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.38);
 }
 
-.power-control input {
-  width: 100%;
-  accent-color: #cfc3a3;
+.throw-power-gauge output span {
+  margin-left: 1px;
+  color: rgba(255, 249, 232, 0.4);
+}
+
+.throw-power-gauge:hover .power-gauge-cone,
+.throw-power-gauge:focus-within .power-gauge-cone {
+  filter: saturate(1.12) brightness(1.08);
+  opacity: 0.92;
+}
+
+.throw-power-gauge:focus-within .power-gauge-shell {
+  filter:
+    drop-shadow(0 5px 12px rgba(0, 0, 0, 0.22))
+    drop-shadow(0 0 4px rgba(255, 246, 220, 0.16));
+}
+
+.throw-power-gauge:focus-within .power-gauge-marker {
+  height: 2px;
+  background: rgba(255, 252, 242, 0.98);
 }
 
 .shortcut-help {
@@ -745,6 +854,26 @@ button {
     width: min(210px, calc(100vw - 24px));
   }
 
+  .throw-power-gauge {
+    top: 52%;
+    right: max(7px, env(safe-area-inset-right));
+    width: 42px;
+  }
+
+  .power-gauge-shell,
+  .power-gauge-shell input {
+    width: 42px;
+    height: 142px;
+  }
+
+  .power-gauge-cone {
+    inset: 7px 9px;
+  }
+
+  .power-gauge-marker {
+    width: 28px;
+  }
+
   .preset-strip {
     top: 68px;
     gap: 4px;
@@ -776,6 +905,11 @@ button {
 
   .setting-toggle-track,
   .setting-toggle-knob {
+    transition: none;
+  }
+
+  .power-gauge-cone,
+  .power-gauge-marker {
     transition: none;
   }
 }

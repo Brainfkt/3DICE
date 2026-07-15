@@ -12,8 +12,8 @@
 - Camera follow, group-aware auto zoom, wheel zoom and pinch zoom.
 - Icon-only Reset control that restores every die and the camera state immediately.
 - Deterministic face detection for each die, plus the total for multi-dice throws.
-- A progressive advanced mode for physical sounds, optional haptics, contact feedback, throw power, session history and camera gestures.
-- Advanced `d4`, `d8`, `d10`, `d12` and `d20` meshes with convex colliders, large physically recessed numerals and labelled face detection; standard mode stays on `d6`.
+- A progressive advanced mode for physical sounds, optional haptics, contact feedback, a right-edge vertical throw-power gauge, session history and camera gestures.
+- Advanced `d4`, `d8`, `d10`, `d12` and `d20` meshes with convex colliders, large physically recessed numerals and labelled face detection. The d10 uses a true ten-kite pentagonal trapezohedron; standard mode stays on `d6`.
 - Per-die locking after a multi-dice result. Locked dice form a visible, non-colliding side row while the others are rerolled.
 - Local PBR presets for die material, floor, background and lighting, without remote assets or post-processing.
 - Responsive contextual help that fades after a throw and returns after ten idle seconds.

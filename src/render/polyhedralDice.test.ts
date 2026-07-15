@@ -69,6 +69,19 @@ describe("polyhedral dice", () => {
     expect(definition.geometry.getAttribute("position").count).toBeGreaterThan(0);
   });
 
+  it("builds d10 as a pentagonal trapezohedron with ten kite faces", () => {
+    const definition = getPolyhedralDieDefinition("d10")!;
+    const vertexCount = definition.colliderVertices.length / 3;
+    const triangleCount = definition.geometry.index!.count / 3;
+
+    expect(vertexCount).toBe(12);
+    expect(triangleCount).toBe(20);
+    expect(definition.faces).toHaveLength(10);
+    expect(definition.faces.every((face) => face.vertices.length === 4)).toBe(
+      true,
+    );
+  });
+
   it.each(polyhedralTypes)("uses textured body UVs and recessed numerals on %s", (type) => {
     const definition = getPolyhedralDieDefinition(type)!;
     expectCompleteGeometry(definition.bodyGeometry);

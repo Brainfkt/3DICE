@@ -6,6 +6,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { RollHistoryEntry } from "../game/types";
 import {
   keyboardThrowPowerConfig,
@@ -119,6 +120,11 @@ export function MinimalUI({
   const availableSurfaces = settings.advancedMode
     ? surfaceOptions
     : surfaceOptions.slice(0, STANDARD_OPTION_COUNT);
+  const throwPowerPercent = Math.round(settings.throwPower * 100);
+  const throwPowerPosition =
+    ((settings.throwPower - keyboardThrowPowerConfig.min) /
+      (keyboardThrowPowerConfig.max - keyboardThrowPowerConfig.min)) *
+    100;
 
   useEffect(() => {
     if (throwRevision === 0) return;
@@ -208,7 +214,7 @@ export function MinimalUI({
           ) : null}
           {settings.advancedMode ? (
             <span className="advanced-status">
-              {settings.diceType} · puissance {Math.round(settings.throwPower * 100)} %
+              {settings.diceType}
             </span>
           ) : null}
         </div>
@@ -373,25 +379,6 @@ export function MinimalUI({
                 <details>
                   <summary>Lancer et caméra</summary>
                   <div className="advanced-section-content toggle-stack">
-                    <label className="power-control">
-                      <span>
-                        Puissance
-                        <output>{Math.round(settings.throwPower * 100)} %</output>
-                      </span>
-                      <input
-                        aria-label="Puissance du lancer clavier"
-                        max={keyboardThrowPowerConfig.max}
-                        min={keyboardThrowPowerConfig.min}
-                        onChange={(event) =>
-                          onSettingsChange({
-                            throwPower: Number(event.currentTarget.value),
-                          })
-                        }
-                        step={keyboardThrowPowerConfig.step}
-                        type="range"
-                        value={settings.throwPower}
-                      />
-                    </label>
                     <SettingToggle
                       checked={settings.autoRecenterEnabled}
                       label="Recentrage auto"
@@ -459,6 +446,41 @@ export function MinimalUI({
           </section>
         ) : null}
       </div>
+
+      {settings.advancedMode && !settingsOpen ? (
+        <label
+          className="throw-power-gauge"
+          style={
+            {
+              "--power-position": `${throwPowerPosition}%`,
+            } as CSSProperties
+          }
+          title={`Puissance du lancer : ${throwPowerPercent} %`}
+        >
+          <span className="power-gauge-name">Puissance du lancer</span>
+          <span className="power-gauge-shell">
+            <span aria-hidden="true" className="power-gauge-cone" />
+            <span aria-hidden="true" className="power-gauge-marker-track">
+              <span className="power-gauge-marker" />
+            </span>
+            <input
+              aria-label="Puissance du lancer clavier"
+              aria-orientation="vertical"
+              max={keyboardThrowPowerConfig.max}
+              min={keyboardThrowPowerConfig.min}
+              onChange={(event) =>
+                onSettingsChange({
+                  throwPower: Number(event.currentTarget.value),
+                })
+              }
+              step={keyboardThrowPowerConfig.step}
+              type="range"
+              value={settings.throwPower}
+            />
+          </span>
+          <output>{throwPowerPercent}<span aria-hidden="true">%</span></output>
+        </label>
+      ) : null}
 
       {SHOW_PHYSICS_PRESET_SELECTOR ? (
         <div className="preset-strip" aria-label="Drop presets">
